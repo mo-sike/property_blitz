@@ -1,0 +1,322 @@
+import React, { useState } from 'react';
+import Hand from './Hand';
+import PlayerArea from './PlayerArea';
+import Card from './Card';
+import ActionModal from './ActionModal';
+import JustSayNoPrompt from './JustSayNoPrompt';
+import PaymentModal from './PaymentModal';
+import { canBeStolen, isCompleteSet, SET_SIZES, COLOR_META, RENT_VALUES, getCompleteSets, getBankTotal } from '../utils/cardHelpers';
+
+export default function Board({ state, actions }) {
+  const { gameState, myId, actionPrompt, errorMessage } = state;
+  const [selectedCard, setSelectedCard] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+
+  if (!gameState) return null;
+
+  const gs = gameState;
+  const myPlayer = gs.players.find(p => p.id === myId);
+  const others = gs.players.filter(p => p.id !== myId);
+  const currentPlayer = gs.players[gs.currentPlayerIndex];
+  const isMyTurn = currentPlayer?.id === myId;
+  const pa = gs.pendingAction;
+
+  const iAmResponder = pa && pa.currentResponderId === myId;
+  const iAmPaymentTarget = pa && pa.phase === 'payment' && pa.currentResponderId === myId;
+  const showJsnPrompt = pa && pa.phase === 'jsnWindow' && (iAmResponder || pa.fromPlayerId === myId);
+  const showPayment = iAmPaymentTarget;
+
+  function handleCardClick(card) {
+    if (!isMyTurn || !gs.hasDrawnThisTurn || pa || gs.playsRemainingThisTurn <= 0) return;
+    if (selectedCard?.id === card.id) {
+      setSelectedCard(null); setShowModal(false);
+    } else {
+      setSelectedCard(card); setShowModal(true);
+    }
+  }
+
+  function handleModalConfirm(payload) {
+    actions.playCard(payload);
+    setSelectedCard(null); setShowModal(false);
+  }
+
+  function handleModalCancel() {
+    setSelectedCard(null); setShowModal(false);
+  }
+
+  function handleDiscard() {
+    if (!myPlayer) return;
+    const excess = myPlayer.hand.length - 7;
+    if (excess <= 0) return;
+    const sorted = [...myPlayer.hand].sort((a, b) => (a.value || 0) - (b.value || 0));
+    actions.discardCards(sorted.slice(0, excess).map(c => c.id));
+  }
+
+  const needsDiscard = isMyTurn && myPlayer && myPlayer.hand.length > 7;
+  const canEndTurn = isMyTurn && gs.hasDrawnThisTurn && !pa && !needsDiscard;
+
+  return (
+    <div className="flex flex-col min-h-screen">
+
+      {/* ── Header ──────────────────────────────────────────────────────── */}
+      <div className="flex-shrink-0 px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap"
+        style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="font-black text-lg tracking-tight"
+          style={{ background: 'linear-gradient(135deg, #fde68a, #f59e0b)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          🏠 Property Blitz
+        </div>
+
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-gray-400">Room</span>
+          <span className="font-mono font-black text-white tracking-widest bg-white/10 px-2 py-0.5 rounded-lg">{gs.roomCode}</span>
+        </div>
+
+        {myPlayer && <WinProgress player={myPlayer} />}
+
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-gray-500 text-xs">🎴 {gs.drawPileCount}</span>
+          {gs.doubleRentActive && (
+            <span className="font-bold text-yellow-300 bg-yellow-400/15 px-2 py-0.5 rounded-lg text-xs animate-pulse-slow">
+              ✌️ DBL RENT
+            </span>
+          )}
+          {isMyTurn && !pa && (
+            <span className="font-bold text-green-300 bg-green-400/15 px-2 py-0.5 rounded-lg text-xs animate-pulse-slow">
+              Your Turn
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Opponents ───────────────────────────────────────────────────── */}
+      {others.length > 0 && (
+        <div className="flex-shrink-0 px-3 pt-3 pb-1 overflow-x-auto thin-scroll">
+          <div className="flex gap-3 min-w-max">
+            {others.map(p => (
+              <div key={p.id} className="w-72 flex-shrink-0">
+                <PlayerArea
+                  player={p}
+                  isMe={false}
+                  isCurrent={gs.players[gs.currentPlayerIndex]?.id === p.id}
+                  isWinner={gs.winner === p.id}
+                  small
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Center: draw / status / discard ─────────────────────────────── */}
+      <div className="flex items-center justify-center gap-6 py-4 flex-shrink-0">
+
+        {/* Draw pile */}
+        <div className="flex flex-col items-center gap-1.5">
+          <div className="relative cursor-pointer group"
+            onClick={isMyTurn && !gs.hasDrawnThisTurn && !pa ? actions.drawCards : undefined}>
+            {/* Stack shadow layers */}
+            <div className="absolute top-1 left-1 w-24 h-36 rounded-xl opacity-40"
+              style={{ background: 'linear-gradient(135deg,#1e3a5f,#0f2340)', border: '2px solid rgba(255,255,255,0.08)' }} />
+            <div className="absolute top-0.5 left-0.5 w-24 h-36 rounded-xl opacity-60"
+              style={{ background: 'linear-gradient(135deg,#1e3a5f,#0f2340)', border: '2px solid rgba(255,255,255,0.1)' }} />
+            <div className={`relative w-24 h-36 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all
+              ${isMyTurn && !gs.hasDrawnThisTurn && !pa
+                ? 'ring-2 ring-yellow-400 ring-offset-2 ring-offset-transparent group-hover:-translate-y-1'
+                : ''}`}
+              style={{ background: 'linear-gradient(135deg, #1e3a5f 0%, #0f2340 100%)', border: '2px solid rgba(255,255,255,0.22)' }}>
+              <span className="text-3xl">🎴</span>
+              <span className="text-xs font-bold text-blue-300">{gs.drawPileCount}</span>
+              {isMyTurn && !gs.hasDrawnThisTurn && !pa && (
+                <span className="text-xs text-yellow-300 animate-pulse font-semibold">Draw!</span>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">Draw pile</p>
+        </div>
+
+        {/* Turn status */}
+        <div className="flex flex-col items-center gap-2 min-w-[140px]">
+          <div className={`px-4 py-2.5 rounded-2xl text-sm font-bold text-center transition-all ${
+            isMyTurn
+              ? 'text-green-300'
+              : 'text-gray-300'
+          }`}
+            style={{
+              background: isMyTurn ? 'rgba(34,197,94,0.12)' : 'rgba(255,255,255,0.06)',
+              border: `1px solid ${isMyTurn ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.1)'}`,
+            }}>
+            {isMyTurn
+              ? gs.hasDrawnThisTurn
+                ? `${gs.playsRemainingThisTurn} play${gs.playsRemainingThisTurn !== 1 ? 's' : ''} left`
+                : '← Draw cards'
+              : `${currentPlayer?.name}'s turn`}
+          </div>
+
+          {canEndTurn && (
+            <button className="btn-success w-full text-sm" onClick={actions.endTurn}>
+              End Turn ✓
+            </button>
+          )}
+          {needsDiscard && (
+            <button className="btn-danger w-full text-sm" onClick={handleDiscard}>
+              Discard {myPlayer.hand.length - 7} card{myPlayer.hand.length - 7 !== 1 ? 's' : ''}
+            </button>
+          )}
+          {pa && (
+            <div className="text-xs text-yellow-300/80 text-center bg-yellow-400/10 px-3 py-1.5 rounded-xl border border-yellow-400/20">
+              ⏳ {pa.type} pending…
+            </div>
+          )}
+        </div>
+
+        {/* Discard pile */}
+        <div className="flex flex-col items-center gap-1.5">
+          {gs.discardPile?.length > 0 ? (
+            <Card card={gs.discardPile[gs.discardPile.length - 1]} small />
+          ) : (
+            <div className="w-14 h-20 rounded-xl flex items-center justify-center"
+              style={{ border: '2px dashed rgba(255,255,255,0.12)' }}>
+              <span className="text-xs text-gray-600">—</span>
+            </div>
+          )}
+          <p className="text-xs text-gray-500">Discard</p>
+        </div>
+      </div>
+
+      {/* ── My properties ───────────────────────────────────────────────── */}
+      {myPlayer && (
+        <div className="flex-shrink-0 px-3 pb-2">
+          <PlayerArea
+            player={myPlayer}
+            isMe
+            isCurrent={isMyTurn}
+            isWinner={gs.winner === myId}
+          />
+        </div>
+      )}
+
+      {/* ── My hand ─────────────────────────────────────────────────────── */}
+      {myPlayer && (
+        <div className="flex-shrink-0 pt-3 pb-5 px-3"
+          style={{ background: 'rgba(0,0,0,0.25)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center justify-between mb-2.5">
+            <span className="text-sm font-semibold text-gray-300">
+              Hand
+              <span className="ml-1.5 text-xs text-gray-500 font-normal">({myPlayer.hand.length} cards)</span>
+            </span>
+            {selectedCard && (
+              <button className="text-xs text-gray-400 hover:text-white underline transition-colors" onClick={handleModalCancel}>
+                Deselect
+              </button>
+            )}
+            {!isMyTurn && (
+              <span className="text-xs text-gray-500 italic">Waiting for your turn…</span>
+            )}
+            {isMyTurn && !gs.hasDrawnThisTurn && (
+              <span className="text-xs text-yellow-300/70">Draw first</span>
+            )}
+          </div>
+          <Hand
+            cards={myPlayer.hand}
+            selectedCardId={selectedCard?.id}
+            onCardClick={handleCardClick}
+            disabled={!isMyTurn || !gs.hasDrawnThisTurn || !!pa || gs.playsRemainingThisTurn <= 0}
+          />
+        </div>
+      )}
+
+      {/* ── Winner overlay ──────────────────────────────────────────────── */}
+      {gs.winner && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
+          style={{ background: 'rgba(0,0,0,0.85)' }}>
+          <div className="rounded-3xl p-12 text-center shadow-2xl animate-bounce-in max-w-sm w-full"
+            style={{ background: 'linear-gradient(135deg, #78350f 0%, #92400e 50%, #78350f 100%)', border: '2px solid #f59e0b', boxShadow: '0 0 60px rgba(245,158,11,0.4)' }}>
+            <div className="text-7xl mb-4">🏆</div>
+            <h2 className="text-4xl font-black mb-2 text-yellow-300">
+              {gs.winner === myId ? 'You Win!' : `${gs.players.find(p => p.id === gs.winner)?.name} Wins!`}
+            </h2>
+            <p className="text-lg mb-8 text-yellow-100/80">3 complete property sets!</p>
+            <button
+              className="bg-yellow-400 text-black font-black px-8 py-3 rounded-2xl text-lg hover:bg-yellow-300 transition-colors active:scale-95"
+              onClick={() => window.location.reload()}
+            >
+              Play Again →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      {showJsnPrompt && !showPayment && (
+        <JustSayNoPrompt
+          prompt={pa}
+          myId={myId}
+          myHand={myPlayer?.hand}
+          onJustSayNo={actions.justSayNo}
+          onAccept={actions.acceptAction}
+        />
+      )}
+      {showPayment && myPlayer && (
+        <PaymentModal
+          prompt={pa}
+          myPlayer={myPlayer}
+          onPay={actions.payDebt}
+        />
+      )}
+      {showModal && selectedCard && myPlayer && (
+        <ActionModal
+          card={selectedCard}
+          gameState={gs}
+          myId={myId}
+          onConfirm={handleModalConfirm}
+          onCancel={handleModalCancel}
+        />
+      )}
+
+      {/* Error toast */}
+      {errorMessage && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 text-white px-6 py-3 rounded-2xl shadow-2xl z-50 text-sm font-semibold animate-bounce-in"
+          style={{ background: 'rgba(220,38,38,0.95)', backdropFilter: 'blur(8px)' }}>
+          ⚠️ {errorMessage}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WinProgress({ player }) {
+  const sets = getCompleteSets(player).length;
+  const bank = getBankTotal(player);
+  const setsOk = sets >= 3;
+  const bankOk = bank >= 10;
+  const setsPercent = Math.min(sets / 3, 1) * 100;
+  const bankPercent = Math.min(bank / 10, 1) * 100;
+  return (
+    <div className="flex items-center gap-3">
+      <ProgressPill label="Sets" value={sets} max={3} percent={setsPercent} done={setsOk} unit="" />
+      <ProgressPill label="Bank" value={`$${bank}M`} max="$10M" percent={bankPercent} done={bankOk} unit="" />
+      {setsOk && bankOk && (
+        <span className="text-xs font-bold text-yellow-300 animate-pulse-slow">🏆 Win!</span>
+      )}
+    </div>
+  );
+}
+
+function ProgressPill({ label, value, max, percent, done }) {
+  return (
+    <div className={`flex flex-col gap-0.5 px-2 py-1 rounded-lg text-xs transition-colors ${done ? 'bg-yellow-400/15 border border-yellow-400/30' : 'bg-white/5 border border-white/10'}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className={done ? 'text-yellow-300' : 'text-gray-400'}>{label}</span>
+        <span className={`font-bold ${done ? 'text-yellow-300' : 'text-white'}`}>
+          {done ? '✓' : `${value}/${max}`}
+        </span>
+      </div>
+      <div className="w-16 h-1 rounded-full bg-white/10 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${done ? 'bg-yellow-400' : 'bg-blue-400'}`}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
