@@ -27,6 +27,12 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3001;
 
+function pushMove(room, text) {
+  if (!room.moveLog) room.moveLog = [];
+  room.moveLog.push({ text, ts: Date.now() });
+  if (room.moveLog.length > 20) room.moveLog.shift();
+}
+
 // Broadcast full game state to all sockets in the room
 function broadcast(room) {
   io.to(room.roomCode).emit('game_state', sanitize(room));
@@ -74,6 +80,7 @@ function sanitize(room) {
       : null,
     winner: room.winner,
     hasDrawnThisTurn: room.hasDrawnThisTurn,
+    moveLog: (room.moveLog || []).slice(-10),
   };
 }
 
@@ -117,7 +124,10 @@ io.on('connection', (socket) => {
     if (!current || current.id !== socket.id) return socket.emit('error', { message: 'Not your turn' });
     if (room.hasDrawnThisTurn) return socket.emit('error', { message: 'Already drew cards this turn' });
     if (room.pendingAction) return socket.emit('error', { message: 'Resolve pending action first' });
+    const handBefore = current.hand.length;
     doDrawPhase(room);
+    const drawnCount = current.hand.length - handBefore;
+    pushMove(room, `${current.name} drew ${drawnCount} card${drawnCount !== 1 ? 's' : ''}`);
     broadcast(room);
   });
 
@@ -129,11 +139,49 @@ io.on('connection', (socket) => {
     if (!room.hasDrawnThisTurn) return socket.emit('error', { message: 'Draw cards first' });
     if (room.pendingAction) return socket.emit('error', { message: 'Resolve pending action first' });
 
+    const cardBeforePlay = current.hand.find(c => c.id === payload.cardId);
     const result = playCard(room, socket.id, payload);
     if (result.error) return socket.emit('error', { message: result.error });
 
     const playingPlayer = room.players.find(p => p.id === socket.id);
     if (playingPlayer) playingPlayer.cardsPlayed++;
+
+    // Log the move
+    const pName = playingPlayer?.name || 'Someone';
+    if (payload.playAs === 'bank') {
+      pushMove(room, `${pName} banked $${cardBeforePlay?.value ?? '?'}M`);
+    } else if (payload.playAs === 'property') {
+      pushMove(room, `${pName} placed a property`);
+    } else if (payload.playAs === 'action') {
+      if (result.pendingAction) {
+        const pa = room.pendingAction;
+        const targetName = room.players.find(p => p.id === pa.originalTargetId)?.name || 'someone';
+        if (pa.type === 'rent') {
+          const isMulti = cardBeforePlay?.subtype !== 'rentAny';
+          pushMove(room, `${pName} charged ${isMulti ? 'everyone' : targetName} $${pa.amount}M rent`);
+        } else if (pa.type === 'birthday') {
+          pushMove(room, `${pName} played It's My Birthday`);
+        } else if (pa.type === 'debtCollector') {
+          pushMove(room, `${pName} used Debt Collector on ${targetName}`);
+        } else if (pa.type === 'slyDeal') {
+          pushMove(room, `${pName} Sly Dealt from ${targetName}`);
+        } else if (pa.type === 'forcedDeal') {
+          pushMove(room, `${pName} Forced Deal with ${targetName}`);
+        } else if (pa.type === 'dealBreaker') {
+          pushMove(room, `${pName} Deal Breaker on ${targetName}`);
+        } else {
+          pushMove(room, `${pName} played ${pa.type}`);
+        }
+      } else {
+        const subLabels = {
+          passGo: 'played Pass Go',
+          doubleRent: 'activated Double Rent',
+          house: 'placed a House',
+          hotel: 'placed a Hotel',
+        };
+        pushMove(room, `${pName} ${subLabels[cardBeforePlay?.subtype] || 'played a card'}`);
+      }
+    }
 
     if (room.winner) {
       broadcast(room);
@@ -161,8 +209,10 @@ io.on('connection', (socket) => {
   socket.on('just_say_no', () => {
     const room = getRoomBySocket(socket.id);
     if (!room) return;
+    const jsnPlayer = room.players.find(p => p.id === socket.id);
     const result = handleJustSayNo(room, socket.id);
     if (result.error) return socket.emit('error', { message: result.error });
+    pushMove(room, `${jsnPlayer?.name || 'Someone'} said Just Say No`);
 
     broadcast(room);
     const pa = room.pendingAction;
@@ -226,8 +276,12 @@ io.on('connection', (socket) => {
   socket.on('pay_debt', ({ cards: cardIds }) => {
     const room = getRoomBySocket(socket.id);
     if (!room) return;
+    const pa = room.pendingAction;
+    const creditorName = pa ? room.players.find(p => p.id === pa.fromPlayerId)?.name : null;
+    const payerName = room.players.find(p => p.id === socket.id)?.name || 'Someone';
     const result = handlePayDebt(room, socket.id, cardIds || []);
     if (result.error) return socket.emit('error', { message: result.error });
+    pushMove(room, `${payerName} paid ${creditorName || 'debt'}`);
 
     if (room.winner) {
       broadcast(room);
@@ -274,6 +328,7 @@ io.on('connection', (socket) => {
       return socket.emit('error', { message: 'Discard down to 7 cards first' });
     }
 
+    pushMove(room, `${current.name} ended their turn`);
     advanceTurn(room);
 
     const winner = checkAndSetWinner(room);

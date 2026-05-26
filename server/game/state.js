@@ -34,6 +34,7 @@ function createRoom(socketId, playerName) {
     pendingAction: null,
     winner: null,
     hasDrawnThisTurn: false,
+    moveLog: [],
   };
   rooms.set(code, room);
   socketToRoom.set(socketId, code);
