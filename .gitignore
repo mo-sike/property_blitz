@@ -1,0 +1,27 @@
+# Claude Code
+.claude/
+
+# Dependencies — never commit these
+node_modules/
+**/node_modules/
+
+# Build output
+client/dist/
+client/build/
+
+# Environment variables — may contain secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
