@@ -6,6 +6,7 @@ import ActionModal from './ActionModal';
 import JustSayNoPrompt from './JustSayNoPrompt';
 import PaymentModal from './PaymentModal';
 import WildReassignModal from './WildReassignModal';
+import Leaderboard from './Leaderboard';
 import { canBeStolen, isCompleteSet, SET_SIZES, COLOR_META, RENT_VALUES, getCompleteSets, getBankTotal } from '../utils/cardHelpers';
 
 export default function Board({ state, actions }) {
@@ -13,6 +14,7 @@ export default function Board({ state, actions }) {
   const [selectedCard, setSelectedCard] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [wildToMove, setWildToMove] = useState(null); // { card, fromColor }
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
 
   if (!gameState) return null;
 
@@ -125,7 +127,6 @@ export default function Board({ state, actions }) {
         <div className="flex flex-col items-center gap-1.5">
           <div className="relative cursor-pointer group"
             onClick={isMyTurn && !gs.hasDrawnThisTurn && !pa ? actions.drawCards : undefined}>
-            {/* Stack shadow layers */}
             <div className="absolute top-1 left-1 w-24 h-36 rounded-xl opacity-40"
               style={{ background: 'linear-gradient(135deg,#1e3a5f,#0f2340)', border: '2px solid rgba(255,255,255,0.08)' }} />
             <div className="absolute top-0.5 left-0.5 w-24 h-36 rounded-xl opacity-60"
@@ -148,9 +149,7 @@ export default function Board({ state, actions }) {
         {/* Turn status */}
         <div className="flex flex-col items-center gap-2 min-w-[140px]">
           <div className={`px-4 py-2.5 rounded-2xl text-sm font-bold text-center transition-all ${
-            isMyTurn
-              ? 'text-green-300'
-              : 'text-gray-300'
+            isMyTurn ? 'text-green-300' : 'text-gray-300'
           }`}
             style={{
               background: isMyTurn ? 'rgba(34,197,94,0.12)' : 'rgba(255,255,255,0.06)',
@@ -176,6 +175,35 @@ export default function Board({ state, actions }) {
           {pa && (
             <div className="text-xs text-yellow-300/80 text-center bg-yellow-400/10 px-3 py-1.5 rounded-xl border border-yellow-400/20">
               ⏳ {pa.type} pending…
+            </div>
+          )}
+
+          {/* End Game */}
+          {!pa && !gs.winner && (
+            <div className="flex items-center justify-center gap-2 mt-1">
+              {!showEndConfirm ? (
+                <button
+                  className="text-xs text-gray-600 hover:text-red-400 transition-colors"
+                  onClick={() => setShowEndConfirm(true)}
+                >
+                  End Game
+                </button>
+              ) : (
+                <>
+                  <button
+                    className="text-xs font-semibold text-white bg-red-600 hover:bg-red-500 px-3 py-1 rounded-lg transition-colors"
+                    onClick={() => { actions.endGame(); setShowEndConfirm(false); }}
+                  >
+                    Confirm End
+                  </button>
+                  <button
+                    className="text-xs text-gray-500 hover:text-white transition-colors"
+                    onClick={() => setShowEndConfirm(false)}
+                  >
+                    Cancel
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -237,25 +265,14 @@ export default function Board({ state, actions }) {
         </div>
       )}
 
-      {/* ── Winner overlay ──────────────────────────────────────────────── */}
-      {gs.winner && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
-          style={{ background: 'rgba(0,0,0,0.85)' }}>
-          <div className="rounded-3xl p-12 text-center shadow-2xl animate-bounce-in max-w-sm w-full"
-            style={{ background: 'linear-gradient(135deg, #78350f 0%, #92400e 50%, #78350f 100%)', border: '2px solid #f59e0b', boxShadow: '0 0 60px rgba(245,158,11,0.4)' }}>
-            <div className="text-7xl mb-4">🏆</div>
-            <h2 className="text-4xl font-black mb-2 text-yellow-300">
-              {gs.winner === myId ? 'You Win!' : `${gs.players.find(p => p.id === gs.winner)?.name} Wins!`}
-            </h2>
-            <p className="text-lg mb-8 text-yellow-100/80">3 complete property sets!</p>
-            <button
-              className="bg-yellow-400 text-black font-black px-8 py-3 rounded-2xl text-lg hover:bg-yellow-300 transition-colors active:scale-95"
-              onClick={() => window.location.reload()}
-            >
-              Play Again →
-            </button>
-          </div>
-        </div>
+      {/* ── Leaderboard / Game Over overlay ─────────────────────────────── */}
+      {state.leaderboard && (
+        <Leaderboard
+          leaderboard={state.leaderboard}
+          reason={state.gameOverReason}
+          myId={myId}
+          onPlayAgain={() => window.location.reload()}
+        />
       )}
 
       {/* Modals */}

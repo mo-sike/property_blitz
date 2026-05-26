@@ -7,7 +7,7 @@ const {
   createRoom, joinRoom, startGame,
   getRoom, getRoomBySocket, removeSocket,
   getCurrentPlayer, advanceTurn, doDrawPhase,
-  checkAndSetWinner,
+  checkAndSetWinner, calculateLeaderboard, finalizeDisconnect,
 } = require('./game/state');
 
 const {
@@ -30,6 +30,12 @@ const PORT = process.env.PORT || 3001;
 // Broadcast full game state to all sockets in the room
 function broadcast(room) {
   io.to(room.roomCode).emit('game_state', sanitize(room));
+}
+
+function emitGameOver(room, reason = 'win') {
+  if (room.status !== 'finished') room.status = 'finished';
+  const leaderboard = calculateLeaderboard(room);
+  io.to(room.roomCode).emit('game_over', { leaderboard, reason });
 }
 
 // For now, send full state (clients display only what they need)
@@ -125,9 +131,12 @@ io.on('connection', (socket) => {
     const result = playCard(room, socket.id, payload);
     if (result.error) return socket.emit('error', { message: result.error });
 
+    const playingPlayer = room.players.find(p => p.id === socket.id);
+    if (playingPlayer) playingPlayer.cardsPlayed++;
+
     if (room.winner) {
       broadcast(room);
-      io.to(room.roomCode).emit('game_over', { winner: room.players.find(p => p.id === room.winner)?.name });
+      emitGameOver(room);
       return;
     }
 
@@ -183,7 +192,7 @@ io.on('connection', (socket) => {
 
     if (room.winner) {
       broadcast(room);
-      io.to(room.roomCode).emit('game_over', { winner: room.players.find(p => p.id === room.winner)?.name });
+      emitGameOver(room);
       return;
     }
 
@@ -221,7 +230,7 @@ io.on('connection', (socket) => {
 
     if (room.winner) {
       broadcast(room);
-      io.to(room.roomCode).emit('game_over', { winner: room.players.find(p => p.id === room.winner)?.name });
+      emitGameOver(room);
       return;
     }
 
@@ -269,7 +278,7 @@ io.on('connection', (socket) => {
     const winner = checkAndSetWinner(room);
     if (winner) {
       broadcast(room);
-      io.to(room.roomCode).emit('game_over', { winner: winner.name });
+      emitGameOver(room);
       return;
     }
 
@@ -302,10 +311,35 @@ io.on('connection', (socket) => {
     broadcast(room);
   });
 
+  socket.on('end_game', () => {
+    const room = getRoomBySocket(socket.id);
+    if (!room || room.status !== 'playing') return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player || !player.connected) return;
+    emitGameOver(room, 'manual');
+    broadcast(room);
+  });
+
   socket.on('disconnect', () => {
     console.log(`Disconnected: ${socket.id}`);
-    const room = removeSocket(socket.id);
-    if (room) broadcast(room);
+    const disconnectedId = socket.id;
+    const room = removeSocket(disconnectedId);
+    if (!room) return;
+    broadcast(room);
+
+    if (room.status === 'playing') {
+      // End the game if player is still disconnected after 3 minutes
+      setTimeout(() => {
+        const player = room.players.find(p => p.id === disconnectedId);
+        if (player && !player.connected && room.status === 'playing') {
+          emitGameOver(room, 'disconnect_timeout');
+          broadcast(room);
+        }
+      }, 3 * 60 * 1000);
+    } else {
+      // Lobby: remove player cleanly after 60 seconds
+      setTimeout(() => finalizeDisconnect(disconnectedId), 60 * 1000);
+    }
   });
 });
 
