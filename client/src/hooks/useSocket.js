@@ -26,7 +26,7 @@ export function useSocket(handlers) {
 
     const events = [
       'game_state', 'game_started', 'game_over', 'room_created', 'room_joined',
-      'action_prompt', 'just_say_no_played', 'error',
+      'action_prompt', 'just_say_no_played', 'error', 'chat_message',
     ];
 
     const listeners = {};
