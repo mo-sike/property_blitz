@@ -211,11 +211,8 @@ function advanceTurn(room) {
 
 function doDrawPhase(room) {
   const player = getCurrentPlayer(room);
-  const hasAnyCards = player.hand.length > 0 ||
-    player.bank.length > 0 ||
-    Object.values(player.properties).some(arr => arr.length > 0);
-
-  const count = hasAnyCards ? 2 : 5;
+  // Official rule: draw 5 if hand is empty at start of turn, otherwise draw 2
+  const count = player.hand.length === 0 ? 5 : 2;
   drawCards(room, player, count);
   room.hasDrawnThisTurn = true;
 }
