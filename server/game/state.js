@@ -1,5 +1,5 @@
 const { buildDeck, shuffle, ALL_COLORS } = require('./deck');
-const { checkWin } = require('./rules');
+const { checkWin, getCompleteSets } = require('./rules');
 
 const rooms = new Map();
 const socketToRoom = new Map();
@@ -49,6 +49,7 @@ function makePlayer(socketId, name) {
     properties: makeEmptyProperties(),
     connected: true,
     disconnectTime: null,
+    cardsPlayed: 0,
   };
 }
 
@@ -140,24 +141,50 @@ function getRoomBySocket(socketId) {
 function removeSocket(socketId) {
   const room = getRoomBySocket(socketId);
   if (!room) return null;
-
   const player = room.players.find(p => p.id === socketId);
   if (player) {
     player.connected = false;
     player.disconnectTime = Date.now();
-    // Clean up after 60 seconds if still disconnected
-    setTimeout(() => {
-      const p = room.players.find(x => x.id === socketId);
-      if (p && !p.connected && p.disconnectTime && Date.now() - p.disconnectTime >= 60000) {
-        room.players = room.players.filter(x => x.id !== socketId);
-        socketToRoom.delete(socketId);
-        if (room.players.length === 0) rooms.delete(room.roomCode);
-      }
-    }, 61000);
   }
-
   socketToRoom.delete(socketId);
   return room;
+}
+
+// Remove a disconnected player from their room (used for lobby cleanup)
+function finalizeDisconnect(socketId) {
+  for (const [code, room] of rooms) {
+    const idx = room.players.findIndex(p => p.id === socketId && !p.connected);
+    if (idx !== -1) {
+      room.players.splice(idx, 1);
+      if (room.players.length === 0) rooms.delete(code);
+      return;
+    }
+  }
+}
+
+function calculateLeaderboard(room) {
+  const entries = room.players.map(p => {
+    const bankValue = (p.bank || []).reduce((s, c) => s + (c.value || 0), 0);
+    const propValue = Object.values(p.properties || {}).flat().reduce((s, c) => s + (c.value || 0), 0);
+    return {
+      id: p.id,
+      name: p.name,
+      totalValue: bankValue + propValue,
+      bankValue,
+      propValue,
+      cardsPlayed: p.cardsPlayed || 0,
+      completeSets: getCompleteSets(p).length,
+      isWinner: room.winner === p.id,
+    };
+  });
+
+  entries.sort((a, b) => {
+    if (a.isWinner !== b.isWinner) return a.isWinner ? -1 : 1;
+    if (b.totalValue !== a.totalValue) return b.totalValue - a.totalValue;
+    return a.cardsPlayed - b.cardsPlayed;
+  });
+
+  return entries.map((e, i) => ({ ...e, rank: i + 1 }));
 }
 
 function getCurrentPlayer(room) {
@@ -208,4 +235,5 @@ module.exports = {
   getRoom, getRoomBySocket, removeSocket,
   getCurrentPlayer, advanceTurn, doDrawPhase,
   drawCards, checkAndSetWinner, makeEmptyProperties,
+  finalizeDisconnect, calculateLeaderboard,
 };

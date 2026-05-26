@@ -9,6 +9,8 @@ const initialState = {
   actionPrompt: null,
   errorMessage: null,
   myId: null,
+  leaderboard: null,
+  gameOverReason: null,
 };
 
 export function useGameState() {
@@ -23,9 +25,8 @@ export function useGameState() {
     game_started: (gs) => {
       update({ gameState: gs, screen: 'game', myId: getSocketId() });
     },
-    game_over: ({ winner }) => {
-      update({ actionPrompt: null });
-      // gameState will be updated via game_state event
+    game_over: ({ leaderboard, reason }) => {
+      update({ leaderboard, gameOverReason: reason, actionPrompt: null });
     },
     room_created: ({ roomCode }) => {
       update({ roomCode, myId: getSocketId() });
@@ -82,6 +83,9 @@ export function useGameState() {
     },
     reassignWild: (cardId, newColor) => {
       emit('reassign_wild', { cardId, newColor });
+    },
+    endGame: () => {
+      emit('end_game');
     },
     clearError: () => update({ errorMessage: null }),
     setScreen: (screen) => update({ screen }),
