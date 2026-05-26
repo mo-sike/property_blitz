@@ -1,9 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Card from './Card';
 import { getPayableCards } from '../utils/cardHelpers';
 
 export default function PaymentModal({ prompt, myPlayer, onPay }) {
   const [selected, setSelected] = useState(new Set());
+  const [timeLeft, setTimeLeft] = useState(30);
+
+  useEffect(() => {
+    setTimeLeft(30);
+    const interval = setInterval(() => {
+      setTimeLeft(t => {
+        if (t <= 1) {
+          clearInterval(interval);
+          const payable = getPayableCards(myPlayer);
+          onPay(payable.map(c => c.id));
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [prompt?.fromPlayerId]);
 
   if (!prompt || prompt.phase !== 'payment') return null;
 
@@ -40,6 +57,24 @@ export default function PaymentModal({ prompt, myPlayer, onPay }) {
       style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}>
       <div className="w-full max-w-lg rounded-2xl p-6 shadow-2xl animate-bounce-in"
         style={{ background: 'linear-gradient(160deg, #1c1c2e 0%, #12121e 100%)', border: '1px solid rgba(255,255,255,0.1)' }}>
+
+        {/* Timer bar */}
+        <div className="mb-5">
+          <div className="flex justify-between text-xs mb-1.5">
+            <span className="text-gray-500">Time to pay</span>
+            <span className="font-bold tabular-nums" style={{ color: timeLeft <= 10 ? '#ef4444' : timeLeft <= 20 ? '#f59e0b' : '#22c55e' }}>{timeLeft}s</span>
+          </div>
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+            <div
+              className="h-full rounded-full transition-all duration-1000"
+              style={{
+                width: `${(timeLeft / 30) * 100}%`,
+                background: timeLeft <= 10 ? '#ef4444' : timeLeft <= 20 ? '#f59e0b' : '#22c55e',
+                boxShadow: `0 0 8px ${timeLeft <= 10 ? '#ef4444' : timeLeft <= 20 ? '#f59e0b' : '#22c55e'}`,
+              }}
+            />
+          </div>
+        </div>
 
         {/* Header */}
         <div className="mb-5">
