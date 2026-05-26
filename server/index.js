@@ -243,7 +243,8 @@ io.on('connection', (socket) => {
 
   socket.on('reassign_wild', ({ cardId, newColor }) => {
     const room = getRoomBySocket(socket.id);
-    if (!room) return;
+    if (!room || room.status !== 'playing') return;
+    if (room.pendingAction) return socket.emit('error', { message: 'Resolve pending action first' });
     const current = getCurrentPlayer(room);
     if (!current || current.id !== socket.id) return socket.emit('error', { message: 'Not your turn' });
     const result = reassignWild(room, socket.id, cardId, newColor);

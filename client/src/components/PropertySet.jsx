@@ -2,7 +2,7 @@ import React from 'react';
 import Card from './Card';
 import { getColorMeta, SET_SIZES, countPropertyCards, getRentForSet } from '../utils/cardHelpers';
 
-export default function PropertySet({ color, cards, isComplete, onCardClick, selectedCardId, small }) {
+export default function PropertySet({ color, cards, isComplete, onCardClick, selectedCardId, small, onWildClick }) {
   const meta = getColorMeta(color);
   const propCount = countPropertyCards(cards);
   const size = SET_SIZES[color] || 0;
@@ -41,15 +41,30 @@ export default function PropertySet({ color, cards, isComplete, onCardClick, sel
 
       {/* Cards */}
       <div className="flex flex-wrap gap-1">
-        {cards.map(c => (
-          <Card
-            key={c.id}
-            card={c}
-            small={small !== false}
-            selected={c.id === selectedCardId}
-            onClick={onCardClick ? () => onCardClick(c) : undefined}
-          />
-        ))}
+        {cards.map(c => {
+          const isWild = c.type === 'wildProperty';
+          const canMove = isWild && !!onWildClick && !isComplete;
+          return (
+            <div key={c.id} className="relative">
+              <Card
+                card={c}
+                small={small !== false}
+                selected={c.id === selectedCardId}
+                onClick={onCardClick ? () => onCardClick(c) : undefined}
+              />
+              {canMove && (
+                <button
+                  title="Move wild to another set"
+                  onClick={() => onWildClick(c, color)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-xs font-black z-10 transition-all hover:scale-110 active:scale-95"
+                  style={{ background: 'rgba(250,204,21,0.95)', color: '#000', boxShadow: '0 1px 4px rgba(0,0,0,0.5)' }}
+                >
+                  ↔
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
