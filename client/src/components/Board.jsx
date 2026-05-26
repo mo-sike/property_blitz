@@ -335,6 +335,9 @@ export default function Board({ state, actions }) {
         />
       )}
 
+      {/* Move log */}
+      <MoveLog moves={gs.moveLog || []} />
+
       {/* Error toast */}
       {errorMessage && (
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 text-white px-6 py-3 rounded-2xl shadow-2xl z-50 text-sm font-semibold animate-bounce-in"
@@ -379,6 +382,58 @@ function ProgressPill({ label, value, max, percent, done }) {
           style={{ width: `${percent}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+function formatRelTime(ts) {
+  const secs = Math.floor((Date.now() - ts) / 1000);
+  if (secs < 5) return 'now';
+  if (secs < 60) return `${secs}s`;
+  return `${Math.floor(secs / 60)}m`;
+}
+
+function MoveLog({ moves }) {
+  const [open, setOpen] = useState(true);
+  const visible = [...moves].reverse().slice(0, 8);
+
+  return (
+    <div className="fixed bottom-4 right-4 z-40 w-60 select-none">
+      <button
+        className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-white/10"
+        style={{
+          background: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          borderRadius: open ? '0.75rem 0.75rem 0 0' : '0.75rem',
+        }}
+        onClick={() => setOpen(o => !o)}
+      >
+        <span className="text-gray-300 font-semibold">Moves</span>
+        <span className="text-gray-500 tabular-nums">{open ? '▾' : '▸'} {moves.length}</span>
+      </button>
+      {open && (
+        <div style={{
+          background: 'rgba(0,0,0,0.72)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          borderTop: 'none',
+          borderRadius: '0 0 0.75rem 0.75rem',
+        }}>
+          {visible.length === 0 ? (
+            <div className="px-3 py-2.5 text-xs text-gray-600 italic">No moves yet</div>
+          ) : (
+            <div className="max-h-44 overflow-y-auto thin-scroll divide-y divide-white/5">
+              {visible.map((m, i) => (
+                <div key={i} className="px-3 py-1.5 flex items-start gap-2">
+                  <span className="text-gray-200 text-xs leading-relaxed flex-1">{m.text}</span>
+                  <span className="text-gray-600 text-[10px] pt-0.5 shrink-0 tabular-nums">{formatRelTime(m.ts)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
