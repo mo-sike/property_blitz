@@ -5,12 +5,14 @@ import Card from './Card';
 import ActionModal from './ActionModal';
 import JustSayNoPrompt from './JustSayNoPrompt';
 import PaymentModal from './PaymentModal';
+import WildReassignModal from './WildReassignModal';
 import { canBeStolen, isCompleteSet, SET_SIZES, COLOR_META, RENT_VALUES, getCompleteSets, getBankTotal } from '../utils/cardHelpers';
 
 export default function Board({ state, actions }) {
   const { gameState, myId, actionPrompt, errorMessage } = state;
   const [selectedCard, setSelectedCard] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [wildToMove, setWildToMove] = useState(null); // { card, fromColor }
 
   if (!gameState) return null;
 
@@ -42,6 +44,15 @@ export default function Board({ state, actions }) {
 
   function handleModalCancel() {
     setSelectedCard(null); setShowModal(false);
+  }
+
+  function handleWildClick(card, fromColor) {
+    setWildToMove({ card, fromColor });
+  }
+
+  function handleWildMove(newColor) {
+    actions.reassignWild(wildToMove.card.id, newColor);
+    setWildToMove(null);
   }
 
   function handleDiscard() {
@@ -191,6 +202,7 @@ export default function Board({ state, actions }) {
             isMe
             isCurrent={isMyTurn}
             isWinner={gs.winner === myId}
+            onWildClick={isMyTurn && !pa ? handleWildClick : undefined}
           />
         </div>
       )}
@@ -270,6 +282,16 @@ export default function Board({ state, actions }) {
           myId={myId}
           onConfirm={handleModalConfirm}
           onCancel={handleModalCancel}
+        />
+      )}
+
+      {wildToMove && myPlayer && (
+        <WildReassignModal
+          card={wildToMove.card}
+          fromColor={wildToMove.fromColor}
+          playerProperties={myPlayer.properties}
+          onMove={handleWildMove}
+          onCancel={() => setWildToMove(null)}
         />
       )}
 

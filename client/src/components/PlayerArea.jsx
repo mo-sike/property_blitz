@@ -5,7 +5,7 @@ import { isCompleteSet, SET_SIZES, getCompleteSets } from '../utils/cardHelpers'
 
 export default function PlayerArea({
   player, isMe, isCurrent, isWinner,
-  onPropertyClick, selectedCardId, small,
+  onPropertyClick, selectedCardId, small, onWildClick,
 }) {
   const [bankExpanded, setBankExpanded] = useState(false);
   const bankTotal = (player.bank || []).reduce((s, c) => s + (c.value || 0), 0);
@@ -87,6 +87,7 @@ export default function PlayerArea({
               small
               selectedCardId={selectedCardId}
               onCardClick={onPropertyClick ? (c) => onPropertyClick(c, color, player) : undefined}
+              onWildClick={isMe && onWildClick ? onWildClick : undefined}
             />
           ))}
         </div>
