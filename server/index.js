@@ -367,6 +367,24 @@ io.on('connection', (socket) => {
     broadcast(room);
   });
 
+  socket.on('chat_message', ({ text }) => {
+    const room = getRoomBySocket(socket.id);
+    if (!room || room.status !== 'playing') return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+    const msg = {
+      playerId: socket.id,
+      playerName: player.name,
+      text: String(text || '').trim().slice(0, 200),
+      ts: Date.now(),
+    };
+    if (!msg.text) return;
+    if (!room.chatLog) room.chatLog = [];
+    room.chatLog.push(msg);
+    if (room.chatLog.length > 50) room.chatLog.shift();
+    io.to(room.roomCode).emit('chat_message', msg);
+  });
+
   socket.on('end_game', () => {
     const room = getRoomBySocket(socket.id);
     if (!room || room.status !== 'playing') return;

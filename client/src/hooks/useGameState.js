@@ -11,6 +11,7 @@ const initialState = {
   myId: null,
   leaderboard: null,
   gameOverReason: null,
+  chatMessages: [],
 };
 
 export function useGameState() {
@@ -39,6 +40,12 @@ export function useGameState() {
     },
     just_say_no_played: (data) => {
       // actionPrompt will be updated by subsequent action_prompt event
+    },
+    chat_message: (msg) => {
+      setState(prev => ({
+        ...prev,
+        chatMessages: [...prev.chatMessages, msg].slice(-50),
+      }));
     },
     error: ({ message }) => {
       update({ errorMessage: message });
@@ -86,6 +93,9 @@ export function useGameState() {
     },
     endGame: () => {
       emit('end_game');
+    },
+    sendChat: (text) => {
+      emit('chat_message', { text });
     },
     clearError: () => update({ errorMessage: null }),
     setScreen: (screen) => update({ screen }),

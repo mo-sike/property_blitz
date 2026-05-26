@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Hand from './Hand';
 import PlayerArea from './PlayerArea';
 import Card from './Card';
@@ -10,7 +10,7 @@ import Leaderboard from './Leaderboard';
 import { canBeStolen, isCompleteSet, SET_SIZES, COLOR_META, RENT_VALUES, getCompleteSets, getBankTotal } from '../utils/cardHelpers';
 
 export default function Board({ state, actions }) {
-  const { gameState, myId, actionPrompt, errorMessage } = state;
+  const { gameState, myId, actionPrompt, errorMessage, chatMessages = [] } = state;
   const [selectedCard, setSelectedCard] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [wildToMove, setWildToMove] = useState(null); // { card, fromColor }
@@ -260,7 +260,7 @@ export default function Board({ state, actions }) {
 
       {/* ── My hand ─────────────────────────────────────────────────────── */}
       {myPlayer && (
-        <div className="flex-shrink-0 pt-3 pb-5 px-3"
+        <div className="flex-shrink-0 pt-3 pb-[228px] sm:pb-5 px-3"
           style={{ background: 'rgba(0,0,0,0.25)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <div className="flex items-center justify-between mb-2.5">
             <span className="text-sm font-semibold text-gray-300">
@@ -335,8 +335,13 @@ export default function Board({ state, actions }) {
         />
       )}
 
-      {/* Move log */}
-      <MoveLog moves={gs.moveLog || []} />
+      {/* Move log + Chat sidebar */}
+      <GameSidebar
+        moves={gs.moveLog || []}
+        chatMessages={chatMessages}
+        myId={myId}
+        onSendChat={actions.sendChat}
+      />
 
       {/* Error toast */}
       {errorMessage && (
@@ -393,38 +398,127 @@ function formatRelTime(ts) {
   return `${Math.floor(secs / 60)}m`;
 }
 
-function MoveLog({ moves }) {
+// ── Tabbed Moves + Chat sidebar ─────────────────────────────────────────────
+// Desktop: fixed bottom-right floating panel (w-64)
+// Mobile (≤640px): fixed bottom bar, full width, above nothing (sits above the
+//   error toast layer). Collapses to a slim 36px pill.
+
+const PANEL_GLASS = {
+  background: 'rgba(10,10,20,0.82)',
+  backdropFilter: 'blur(14px)',
+  border: '1px solid rgba(255,255,255,0.10)',
+};
+
+function GameSidebar({ moves, chatMessages, myId, onSendChat }) {
   const [open, setOpen] = useState(true);
-  const visible = [...moves].reverse().slice(0, 8);
+  const [tab, setTab] = useState('moves'); // 'moves' | 'chat'
+  const [chatInput, setChatInput] = useState('');
+  const [unreadChat, setUnreadChat] = useState(0);
+  const chatEndRef = useRef(null);
+  const prevChatLen = useRef(chatMessages.length);
+
+  // Track unread chat badges when on the moves tab
+  useEffect(() => {
+    if (chatMessages.length > prevChatLen.current) {
+      if (tab !== 'chat' || !open) {
+        setUnreadChat(u => u + (chatMessages.length - prevChatLen.current));
+      }
+    }
+    prevChatLen.current = chatMessages.length;
+  }, [chatMessages.length, tab, open]);
+
+  // Clear badge when chat tab becomes active
+  useEffect(() => {
+    if (tab === 'chat' && open) setUnreadChat(0);
+  }, [tab, open]);
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    if (tab === 'chat' && open) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages.length, tab, open]);
+
+  function sendChat(e) {
+    e.preventDefault();
+    const txt = chatInput.trim();
+    if (!txt) return;
+    onSendChat(txt);
+    setChatInput('');
+  }
+
+  const moveItems = [...moves].reverse().slice(0, 10);
+
+  // Colour-coded chat bubbles: mine on the right, others on the left
+  function ChatBubble({ msg }) {
+    const isMe = msg.playerId === myId;
+    return (
+      <div className={`flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'}`}>
+        {!isMe && (
+          <span className="text-[10px] text-gray-500 px-1">{msg.playerName}</span>
+        )}
+        <div className={`max-w-[85%] px-2.5 py-1.5 rounded-2xl text-xs leading-snug ${
+          isMe
+            ? 'bg-blue-600/80 text-white rounded-br-sm'
+            : 'bg-white/10 text-gray-200 rounded-bl-sm'
+        }`}>
+          {msg.text}
+        </div>
+        <span className="text-[9px] text-gray-600 px-1">{formatRelTime(msg.ts)}</span>
+      </div>
+    );
+  }
+
+  // ── Positioning: full-width on mobile, fixed corner on desktop
+  const wrapperClass = [
+    'fixed z-40 select-none',
+    // mobile: bottom bar, full width, sits at very bottom
+    'bottom-0 left-0 right-0',
+    // desktop: right corner, fixed width, slightly inset
+    'sm:bottom-4 sm:left-auto sm:right-4 sm:w-64',
+  ].join(' ');
+
+  const headerRadius = open
+    ? 'rounded-t-2xl sm:rounded-t-xl'
+    : 'rounded-2xl sm:rounded-xl';
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 w-60 select-none">
+    <div className={wrapperClass}>
+      {/* ── Header / toggle row ── */}
       <button
-        className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-white/10"
-        style={{
-          background: 'rgba(0,0,0,0.65)',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(255,255,255,0.12)',
-          borderRadius: open ? '0.75rem 0.75rem 0 0' : '0.75rem',
-        }}
+        className={`w-full flex items-center justify-between px-3 py-2 transition-colors hover:bg-white/5 ${headerRadius}`}
+        style={PANEL_GLASS}
         onClick={() => setOpen(o => !o)}
       >
-        <span className="text-gray-300 font-semibold">Moves</span>
-        <span className="text-gray-500 tabular-nums">{open ? '▾' : '▸'} {moves.length}</span>
+        {/* Tab switchers (also act as toggle-open if closed) */}
+        <div className="flex items-center gap-1" onClick={e => { e.stopPropagation(); if (!open) setOpen(true); }}>
+          <TabPill
+            label="Moves"
+            active={tab === 'moves'}
+            onClick={e => { e.stopPropagation(); setTab('moves'); setOpen(true); }}
+          />
+          <TabPill
+            label="Chat"
+            active={tab === 'chat'}
+            badge={unreadChat}
+            onClick={e => { e.stopPropagation(); setTab('chat'); setOpen(true); setUnreadChat(0); }}
+          />
+        </div>
+        <span className="text-gray-500 text-xs pr-0.5">{open ? '▾' : '▸'}</span>
       </button>
+
+      {/* ── Panel body ── */}
       {open && (
-        <div style={{
-          background: 'rgba(0,0,0,0.72)',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(255,255,255,0.12)',
-          borderTop: 'none',
-          borderRadius: '0 0 0.75rem 0.75rem',
-        }}>
-          {visible.length === 0 ? (
-            <div className="px-3 py-2.5 text-xs text-gray-600 italic">No moves yet</div>
-          ) : (
+        <div
+          className="border-t-0 rounded-b-none sm:rounded-b-xl overflow-hidden"
+          style={{ ...PANEL_GLASS, borderTop: 'none' }}
+        >
+          {/* Moves tab */}
+          {tab === 'moves' && (
             <div className="max-h-44 overflow-y-auto thin-scroll divide-y divide-white/5">
-              {visible.map((m, i) => (
+              {moveItems.length === 0 ? (
+                <div className="px-3 py-3 text-xs text-gray-600 italic">No moves yet</div>
+              ) : moveItems.map((m, i) => (
                 <div key={i} className="px-3 py-1.5 flex items-start gap-2">
                   <span className="text-gray-200 text-xs leading-relaxed flex-1">{m.text}</span>
                   <span className="text-gray-600 text-[10px] pt-0.5 shrink-0 tabular-nums">{formatRelTime(m.ts)}</span>
@@ -432,8 +526,64 @@ function MoveLog({ moves }) {
               ))}
             </div>
           )}
+
+          {/* Chat tab */}
+          {tab === 'chat' && (
+            <div className="flex flex-col" style={{ height: '180px' }}>
+              {/* Message list */}
+              <div className="flex-1 overflow-y-auto thin-scroll px-3 py-2 flex flex-col gap-1.5">
+                {chatMessages.length === 0 ? (
+                  <div className="text-xs text-gray-600 italic mt-auto pb-1">No messages yet — say hi! 👋</div>
+                ) : (
+                  chatMessages.map((msg, i) => <ChatBubble key={i} msg={msg} />)
+                )}
+                <div ref={chatEndRef} />
+              </div>
+              {/* Input */}
+              <form onSubmit={sendChat}
+                className="flex items-center gap-1.5 px-2 py-1.5 border-t border-white/8">
+                <input
+                  className="flex-1 bg-white/8 text-white text-xs px-2.5 py-1.5 rounded-xl outline-none placeholder-gray-600 focus:bg-white/12 transition-colors"
+                  style={{ minWidth: 0, border: '1px solid rgba(255,255,255,0.10)' }}
+                  placeholder="Type a message…"
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  maxLength={200}
+                  autoComplete="off"
+                />
+                <button
+                  type="submit"
+                  disabled={!chatInput.trim()}
+                  className="shrink-0 w-7 h-7 rounded-xl flex items-center justify-center transition-colors disabled:opacity-30"
+                  style={{ background: chatInput.trim() ? 'rgba(59,130,246,0.7)' : 'rgba(255,255,255,0.06)' }}
+                >
+                  <span className="text-xs">↑</span>
+                </button>
+              </form>
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function TabPill({ label, active, badge, onClick }) {
+  return (
+    <button
+      className="relative px-2.5 py-0.5 rounded-lg text-xs font-semibold transition-colors"
+      style={{
+        background: active ? 'rgba(255,255,255,0.12)' : 'transparent',
+        color: active ? 'white' : 'rgba(156,163,175,1)',
+      }}
+      onClick={onClick}
+    >
+      {label}
+      {badge > 0 && (
+        <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+          {badge > 9 ? '9+' : badge}
+        </span>
+      )}
+    </button>
   );
 }
