@@ -62,6 +62,7 @@ function sanitize(room) {
       ? {
           type: room.pendingAction.type,
           fromPlayerId: room.pendingAction.fromPlayerId,
+          fromPlayerName: room.players.find(p => p.id === room.pendingAction.fromPlayerId)?.name,
           originalTargetId: room.pendingAction.originalTargetId,
           currentResponderId: room.pendingAction.currentResponderId,
           amount: room.pendingAction.amount,

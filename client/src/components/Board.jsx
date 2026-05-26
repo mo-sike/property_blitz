@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Hand from './Hand';
 import PlayerArea from './PlayerArea';
 import Card from './Card';
@@ -67,6 +67,24 @@ export default function Board({ state, actions }) {
 
   const needsDiscard = isMyTurn && myPlayer && myPlayer.hand.length > 7;
   const canEndTurn = isMyTurn && gs.hasDrawnThisTurn && !pa && !needsDiscard;
+  const autoEndActive = canEndTurn && gs.playsRemainingThisTurn === 0;
+
+  const [autoEndSecsLeft, setAutoEndSecsLeft] = useState(null);
+
+  useEffect(() => {
+    if (!autoEndActive) {
+      setAutoEndSecsLeft(null);
+      return;
+    }
+    setAutoEndSecsLeft(30);
+    const interval = setInterval(() => {
+      setAutoEndSecsLeft(t => {
+        if (t <= 1) { clearInterval(interval); actions.endTurn(); return 0; }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [autoEndActive]);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -166,6 +184,11 @@ export default function Board({ state, actions }) {
             <button className="btn-success w-full text-sm" onClick={actions.endTurn}>
               End Turn ✓
             </button>
+          )}
+          {autoEndSecsLeft !== null && (
+            <div className="text-xs text-center text-gray-400">
+              Auto-ending in <span className={`font-bold tabular-nums ${autoEndSecsLeft <= 10 ? 'text-red-400' : 'text-yellow-300'}`}>{autoEndSecsLeft}s</span>
+            </div>
           )}
           {needsDiscard && (
             <button className="btn-danger w-full text-sm" onClick={handleDiscard}>
