@@ -16,7 +16,7 @@ export function useGameState() {
 
   const update = useCallback((patch) => setState(prev => ({ ...prev, ...patch })), []);
 
-  const { emit, getSocketId } = useSocket({
+  const { emit, getSocketId, connected: socketConnected } = useSocket({
     game_state: (gs) => {
       update({ gameState: gs, myId: getSocketId() });
     },
@@ -87,5 +87,5 @@ export function useGameState() {
     setScreen: (screen) => update({ screen }),
   };
 
-  return { state, actions };
+  return { state: { ...state, socketConnected }, actions };
 }

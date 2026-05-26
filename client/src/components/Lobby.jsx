@@ -5,11 +5,12 @@ const FLOAT_CARDS = ['🏠', '💰', '🎂', '🚫', '🏦', '🎴', '✌️', '
 export default function Lobby({ state, actions }) {
   const [name, setName] = useState('');
   const [joinCode, setJoinCode] = useState('');
-  const [mode, setMode] = useState(null); // 'create' | 'join'
+  const [mode, setMode] = useState(null); // 'create' | 'join' | 'waiting'
 
   const gs = state.gameState;
   const inRoom = !!state.roomCode && gs;
   const isHost = gs && gs.hostId === state.myId;
+  const { socketConnected } = state;
 
   function handleCreate(e) {
     e.preventDefault();
@@ -114,14 +115,31 @@ export default function Lobby({ state, actions }) {
         </div>
       </div>
 
+      {/* Connection status banner */}
+      {!socketConnected && (
+        <div className="relative z-10 flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-red-300"
+          style={{ background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.3)' }}>
+          <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse flex-shrink-0" />
+          Not connected to server — check your network or try refreshing
+        </div>
+      )}
+      {socketConnected && mode === null && (
+        <div className="relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs text-green-400/70">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+          Connected
+        </div>
+      )}
+
       {/* Action buttons / forms */}
       <div className="relative z-10 w-full max-w-sm">
         {!mode && (
           <div className="flex flex-col gap-3 animate-bounce-in">
-            <button className="btn-primary py-4 text-lg w-full" onClick={() => setMode('create')}>
+            <button className="btn-primary py-4 text-lg w-full" onClick={() => setMode('create')}
+              disabled={!socketConnected}>
               🎮 Create Room
             </button>
-            <button className="btn-ghost py-4 text-lg w-full" onClick={() => setMode('join')}>
+            <button className="btn-ghost py-4 text-lg w-full" onClick={() => setMode('join')}
+              disabled={!socketConnected}>
               🔗 Join Room
             </button>
           </div>
@@ -146,6 +164,19 @@ export default function Lobby({ state, actions }) {
               ← Back
             </button>
           </form>
+        )}
+
+        {mode === 'waiting' && (
+          <div className="glass rounded-2xl p-8 flex flex-col items-center gap-4 animate-slide-up text-center">
+            <div className="w-10 h-10 rounded-full border-4 border-white/20 border-t-yellow-400 animate-spin" />
+            <div>
+              <p className="font-bold text-white">Creating room…</p>
+              <p className="text-sm text-gray-400 mt-1">Waiting for server response</p>
+            </div>
+            <button className="btn-ghost py-2 text-sm w-full" onClick={() => setMode(null)}>
+              ← Cancel
+            </button>
+          </div>
         )}
 
         {mode === 'join' && (
