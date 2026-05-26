@@ -12,7 +12,7 @@ export function useSocket(handlers) {
 
   useEffect(() => {
     if (!sharedSocket) {
-      sharedSocket = io(SERVER_URL, { autoConnect: true, transports: ['websocket', 'polling'] });
+      sharedSocket = io(SERVER_URL, { autoConnect: true, transports: ['polling', 'websocket'] });
     }
     const socket = sharedSocket;
 

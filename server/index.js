@@ -21,6 +21,8 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
+  allowEIO3: true,
+  transports: ['polling', 'websocket'],
 });
 
 const PORT = process.env.PORT || 3001;
