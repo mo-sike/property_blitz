@@ -1,5 +1,17 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useSocket } from './useSocket';
+
+const SESSION_KEY = 'pb_session';
+
+function saveSession(roomCode, playerName) {
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify({ roomCode, playerName })); } catch {}
+}
+function clearSession() {
+  try { localStorage.removeItem(SESSION_KEY); } catch {}
+}
+function loadSession() {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; }
+}
 
 const initialState = {
   screen: 'lobby',
@@ -21,25 +33,45 @@ export function useGameState() {
 
   const { emit, getSocketId, connected: socketConnected } = useSocket({
     game_state: (gs) => {
-      update({ gameState: gs, myId: getSocketId() });
+      setState(prev => ({
+        ...prev,
+        gameState: gs,
+        myId: getSocketId(),
+        // Auto-transition to game board when game is active (handles reconnect on reload)
+        screen: gs.status === 'playing' ? 'game' : prev.screen,
+      }));
     },
     game_started: (gs) => {
       update({ gameState: gs, screen: 'game', myId: getSocketId() });
     },
     game_over: ({ leaderboard, reason }) => {
+      clearSession();
       update({ leaderboard, gameOverReason: reason, actionPrompt: null });
     },
     room_created: ({ roomCode }) => {
-      update({ roomCode, myId: getSocketId() });
+      setState(prev => {
+        saveSession(roomCode, prev.playerName);
+        return { ...prev, roomCode, myId: getSocketId() };
+      });
     },
-    room_joined: ({ roomCode }) => {
-      update({ roomCode, screen: 'lobby', myId: getSocketId() });
+    room_joined: ({ roomCode, reconnected }) => {
+      setState(prev => {
+        saveSession(roomCode, prev.playerName);
+        return {
+          ...prev,
+          roomCode,
+          myId: getSocketId(),
+          // On reconnect to an active game keep current screen; game_state will
+          // flip it to 'game' momentarily. On fresh join go to lobby.
+          screen: reconnected ? prev.screen : 'lobby',
+        };
+      });
     },
     action_prompt: (prompt) => {
       update({ actionPrompt: prompt, myId: getSocketId() });
     },
-    just_say_no_played: (data) => {
-      // actionPrompt will be updated by subsequent action_prompt event
+    just_say_no_played: () => {
+      // actionPrompt will be updated by the subsequent action_prompt event
     },
     chat_message: (msg) => {
       setState(prev => ({
@@ -48,10 +80,28 @@ export function useGameState() {
       }));
     },
     error: ({ message }) => {
+      // Clear stale session if the room no longer exists or we can't rejoin
+      if (message === 'Room not found' || message === 'Game already in progress') {
+        clearSession();
+      }
       update({ errorMessage: message });
       setTimeout(() => update({ errorMessage: null }), 4000);
     },
   });
+
+  // ── Auto-reconnect on (re)connect ─────────────────────────────────────────
+  // Fires whenever the socket connects. If there's a saved session in
+  // localStorage (set when creating/joining a room), automatically rejoin.
+  // The server matches by playerName + disconnected status, so a page reload
+  // during an active game seamlessly puts the player back in.
+  useEffect(() => {
+    if (!socketConnected) return;
+    const saved = loadSession();
+    if (saved?.roomCode && saved?.playerName) {
+      setState(prev => ({ ...prev, playerName: saved.playerName }));
+      emit('join_room', { roomCode: saved.roomCode, playerName: saved.playerName });
+    }
+  }, [socketConnected, emit]);
 
   const actions = {
     createRoom: (playerName) => {

@@ -14,6 +14,8 @@ const {
   playCard, handleJustSayNo, handleAccept, handlePayDebt, reassignWild,
 } = require('./game/actions');
 
+const { getPayableCards } = require('./game/rules');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -31,6 +33,76 @@ function pushMove(room, text) {
   if (!room.moveLog) room.moveLog = [];
   room.moveLog.push({ text, ts: Date.now() });
   if (room.moveLog.length > 20) room.moveLog.shift();
+}
+
+// ── Disconnect helpers ───────────────────────────────────────────────────────
+
+// Build the minimum set of card IDs to cover `amount` for a disconnected payer.
+// Sorts cards by value ascending and picks until covered; pays all if short.
+function buildAutoPayIds(player, amount) {
+  const payable = getPayableCards(player);
+  const total = payable.reduce((s, c) => s + (c.value || 0), 0);
+  if (total <= amount) return payable.map(c => c.id);
+  const sorted = [...payable].sort((a, b) => (a.value || 0) - (b.value || 0));
+  const ids = [];
+  let paid = 0;
+  for (const c of sorted) {
+    if (paid >= amount) break;
+    ids.push(c.id);
+    paid += c.value || 0;
+  }
+  return ids;
+}
+
+// Resolve whatever the disconnected player needs to do, then auto-advance turn
+// if they are also the current player. Returns true if any state changed.
+function autoResolveDisconnected(room, disconnectedId) {
+  const player = room.players.find(p => p.id === disconnectedId);
+  if (!player || player.connected || room.status !== 'playing') return false;
+
+  const pa = room.pendingAction;
+
+  // Case A — disconnected player is the pending-action responder
+  if (pa && pa.currentResponderId === disconnectedId) {
+    if (pa.phase === 'jsnWindow') {
+      const res = handleAccept(room, disconnectedId);
+      if (res.error) return false;
+      // If accept moved into payment phase and same player still owes, auto-pay now
+      if (res.needsPayment && room.pendingAction &&
+          room.pendingAction.currentResponderId === disconnectedId) {
+        handlePayDebt(room, disconnectedId,
+          buildAutoPayIds(player, room.pendingAction.amount));
+      }
+      return true;
+    }
+    if (pa.phase === 'payment') {
+      const res = handlePayDebt(room, disconnectedId,
+        buildAutoPayIds(player, pa.amount));
+      return !res.error;
+    }
+  }
+
+  // Case B — disconnected player is current player and no blocking action
+  const cur = getCurrentPlayer(room);
+  if (cur && cur.id === disconnectedId && !room.pendingAction) {
+    advanceTurn(room);
+    return true;
+  }
+
+  return false;
+}
+
+// After any pending-action resolution that clears pendingAction, auto-advance
+// if the current player is still disconnected (they started an action then left).
+function maybeAutoAdvanceTurn(room) {
+  if (room.pendingAction || room.status !== 'playing') return false;
+  const cur = getCurrentPlayer(room);
+  if (cur && !cur.connected) {
+    pushMove(room, `${cur.name}'s turn auto-advanced (disconnected)`);
+    advanceTurn(room);
+    return true;
+  }
+  return false;
 }
 
 // Broadcast full game state to all sockets in the room
@@ -247,6 +319,13 @@ io.on('connection', (socket) => {
       return;
     }
 
+    // If pending action just cleared and the current player is still disconnected
+    // (they played an action card then left), auto-advance the turn now.
+    if (!room.pendingAction && maybeAutoAdvanceTurn(room)) {
+      checkAndSetWinner(room);
+      if (room.winner) { broadcast(room); emitGameOver(room); return; }
+    }
+
     broadcast(room);
 
     if (result.needsPayment && room.pendingAction) {
@@ -287,6 +366,12 @@ io.on('connection', (socket) => {
       broadcast(room);
       emitGameOver(room);
       return;
+    }
+
+    // Auto-advance if pending cleared and current player is now disconnected
+    if (!room.pendingAction && maybeAutoAdvanceTurn(room)) {
+      checkAndSetWinner(room);
+      if (room.winner) { broadcast(room); emitGameOver(room); return; }
     }
 
     broadcast(room);
@@ -401,19 +486,55 @@ io.on('connection', (socket) => {
     if (!room) return;
     broadcast(room);
 
-    if (room.status === 'playing') {
-      // End the game if player is still disconnected after 3 minutes
-      setTimeout(() => {
-        const player = room.players.find(p => p.id === disconnectedId);
-        if (player && !player.connected && room.status === 'playing') {
-          emitGameOver(room, 'disconnect_timeout');
-          broadcast(room);
-        }
-      }, 3 * 60 * 1000);
-    } else {
+    if (room.status !== 'playing') {
       // Lobby: remove player cleanly after 60 seconds
       setTimeout(() => finalizeDisconnect(disconnectedId), 60 * 1000);
+      return;
     }
+
+    // ── Grace period: give the player 15 s to reconnect before we act ───────
+    // Pending-action responders get a shorter 10 s window (game is fully blocked)
+    const isTurnPlayer = getCurrentPlayer(room)?.id === disconnectedId;
+    const isPendingResponder = room.pendingAction?.currentResponderId === disconnectedId;
+    const graceMs = isPendingResponder ? 10_000 : 15_000;
+
+    if (isTurnPlayer || isPendingResponder) {
+      setTimeout(() => {
+        const player = room.players.find(p => p.id === disconnectedId);
+        if (!player || player.connected || room.status !== 'playing') return;
+
+        const changed = autoResolveDisconnected(room, disconnectedId);
+        if (changed) {
+          pushMove(room, `${player.name}'s action auto-resolved (disconnected)`);
+          checkAndSetWinner(room);
+          if (room.winner) { broadcast(room); emitGameOver(room); return; }
+          broadcast(room);
+          // Forward any new action_prompt to the room
+          if (room.pendingAction) {
+            const pa = room.pendingAction;
+            io.to(room.roomCode).emit('action_prompt', {
+              type: pa.type,
+              fromPlayerId: pa.fromPlayerId,
+              fromPlayerName: room.players.find(p => p.id === pa.fromPlayerId)?.name,
+              targetPlayerId: pa.currentResponderId,
+              amount: pa.amount,
+              details: pa.details,
+              canJustSayNo: pa.phase === 'jsnWindow',
+              phase: pa.phase,
+            });
+          }
+        }
+      }, graceMs);
+    }
+
+    // ── Long timeout: end game if disconnected for 3 minutes ─────────────────
+    setTimeout(() => {
+      const player = room.players.find(p => p.id === disconnectedId);
+      if (player && !player.connected && room.status === 'playing') {
+        emitGameOver(room, 'disconnect_timeout');
+        broadcast(room);
+      }
+    }, 3 * 60 * 1000);
   });
 });
 
