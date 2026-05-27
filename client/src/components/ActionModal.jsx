@@ -22,6 +22,9 @@ export default function ActionModal({ card, gameState, myId, onConfirm, onCancel
     return card.type !== 'property' && card.type !== 'wildProperty';
   }
   function canPlayAsAction() {
+    // Double the Rent cannot be played as a standalone action — it must be
+    // used alongside a rent card via the checkbox in the rent confirmation.
+    if (card.subtype === 'doubleRent') return false;
     return card.type === 'action' || card.type === 'rent';
   }
   function canPlayAsProperty() {
@@ -133,21 +136,6 @@ export default function ActionModal({ card, gameState, myId, onConfirm, onCancel
           <button className="btn-ghost" onClick={onCancel}>Cancel</button>
           <button className="btn-primary" onClick={() => onConfirm({ cardId: card.id, playAs: 'action' })}>
             Play Pass Go
-          </button>
-        </div>
-      </Modal>
-    );
-  }
-
-  // --- Action: Double the Rent ---
-  if (playAs === 'action' && card.subtype === 'doubleRent') {
-    return (
-      <Modal title="Double the Rent" onCancel={onCancel}>
-        <p className="text-gray-300 mb-4">Your next rent card this turn will be doubled. (Cannot combine with rainbow rent.)</p>
-        <div className="flex gap-3 justify-end">
-          <button className="btn-ghost" onClick={onCancel}>Cancel</button>
-          <button className="btn-primary" onClick={() => onConfirm({ cardId: card.id, playAs: 'action' })}>
-            Play
           </button>
         </div>
       </Modal>
@@ -487,13 +475,11 @@ export default function ActionModal({ card, gameState, myId, onConfirm, onCancel
     // Confirm
     const isAny = card.subtype === 'rentAny';
     const baseRent = getRentForColor(rentColor, myPlayer);
-    // presetDouble = doubleRent card was already played as a separate play this turn (not for rainbow)
-    const presetDouble = gameState.doubleRentActive && !isAny;
-    // canClubDouble = player has a doubleRent card in hand AND enough plays to spend 2 total AND it's not rainbow rent
+    // canClubDouble = player has a doubleRent card in hand AND enough plays remain (2 total) AND not rainbow rent
     const hasDoubleRentCard = !isAny && myPlayer.hand.some(c => c.type === 'action' && c.subtype === 'doubleRent');
     const playsLeft = gameState.playsRemainingThisTurn;
-    const canClubDouble = hasDoubleRentCard && !presetDouble && playsLeft >= 2;
-    const willDouble = presetDouble || (canClubDouble && useDoubleRent);
+    const canClubDouble = hasDoubleRentCard && playsLeft >= 2;
+    const willDouble = canClubDouble && useDoubleRent;
     const finalAmount = willDouble ? baseRent * 2 : baseRent;
 
     return (
@@ -523,12 +509,6 @@ export default function ActionModal({ card, gameState, myId, onConfirm, onCancel
             </div>
           </label>
         )}
-        {presetDouble && (
-          <div className="bg-yellow-400/10 border border-yellow-400/40 rounded-xl px-4 py-3 mb-4 text-yellow-300 text-sm">
-            ✌️ Double the Rent already active from previous play
-          </div>
-        )}
-
         <div className="flex gap-3 justify-end">
           <button className="btn-ghost" onClick={() => { isAny ? setTargetPlayerId(null) : setRentColor(null); setUseDoubleRent(false); }}>Back</button>
           <button className="btn-danger" onClick={() => onConfirm({

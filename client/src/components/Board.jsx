@@ -106,11 +106,7 @@ export default function Board({ state, actions }) {
 
         <div className="flex items-center gap-3 text-sm">
           <span className="text-gray-500 text-xs">🎴 {gs.drawPileCount}</span>
-          {gs.doubleRentActive && (
-            <span className="font-bold text-yellow-300 bg-yellow-400/15 px-2 py-0.5 rounded-lg text-xs animate-pulse-slow">
-              ✌️ DBL RENT
-            </span>
-          )}
+
           {isMyTurn && !pa && (
             <span className="font-bold text-green-300 bg-green-400/15 px-2 py-0.5 rounded-lg text-xs animate-pulse-slow">
               Your Turn

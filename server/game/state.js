@@ -30,7 +30,6 @@ function createRoom(socketId, playerName) {
     discardPile: [],
     currentPlayerIndex: 0,
     playsRemainingThisTurn: 3,
-    doubleRentActive: false,
     pendingAction: null,
     winner: null,
     hasDrawnThisTurn: false,
@@ -111,7 +110,6 @@ function startGame(roomCode) {
   room.hasDrawnThisTurn = false;
   room.winner = null;
   room.pendingAction = null;
-  room.doubleRentActive = false;
 
   return room;
 }
@@ -193,8 +191,6 @@ function getCurrentPlayer(room) {
 }
 
 function advanceTurn(room) {
-  // Reset doubleRent on turn change
-  room.doubleRentActive = false;
   room.hasDrawnThisTurn = false;
 
   let nextIdx = (room.currentPlayerIndex + 1) % room.players.length;
@@ -217,13 +213,16 @@ function doDrawPhase(room) {
   room.hasDrawnThisTurn = true;
 }
 
+// Win can only be declared on the current player's own turn.
+// If a player completes their 3rd set during an opponent's action,
+// the win is detected at the start of their next turn (draw_cards).
 function checkAndSetWinner(room) {
-  for (const player of room.players) {
-    if (checkWin(player)) {
-      room.winner = player.id;
-      room.status = 'finished';
-      return player;
-    }
+  const player = getCurrentPlayer(room);
+  if (!player) return null;
+  if (checkWin(player)) {
+    room.winner = player.id;
+    room.status = 'finished';
+    return player;
   }
   return null;
 }
