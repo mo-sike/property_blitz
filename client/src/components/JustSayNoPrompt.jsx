@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getColorMeta } from '../utils/cardHelpers';
+import PlayerPeek from './PlayerPeek';
 
 const ACTION_LABELS = {
   rent: 'Rent Charge',
@@ -98,11 +99,15 @@ function ActionPreview({ type, details }) {
   return null;
 }
 
-export default function JustSayNoPrompt({ prompt, myId, myHand, onJustSayNo, onAccept }) {
+export default function JustSayNoPrompt({ prompt, myId, myHand, requesterPlayer, onJustSayNo, onAccept }) {
   const [timeLeft, setTimeLeft] = useState(30);
+  const [timeExtended, setTimeExtended] = useState(false);
+  const [showPeek, setShowPeek] = useState(false);
 
   useEffect(() => {
     setTimeLeft(30);
+    setTimeExtended(false);
+    setShowPeek(false);
     const interval = setInterval(() => {
       setTimeLeft(t => {
         if (t <= 1) { clearInterval(interval); onAccept(); return 0; }
@@ -120,6 +125,7 @@ export default function JustSayNoPrompt({ prompt, myId, myHand, onJustSayNo, onA
   const hasJsn = myHand?.some(c => c.type === 'action' && c.subtype === 'justSayNo');
   const timerPct = (timeLeft / 30) * 100;
   const timerColor = timeLeft > 15 ? '#22c55e' : timeLeft > 7 ? '#f59e0b' : '#ef4444';
+  const requesterName = requesterPlayer?.name || prompt.fromPlayerName || 'Opponent';
 
   // Passive indicator for non-responders
   if (!isResponder) {
@@ -144,10 +150,23 @@ export default function JustSayNoPrompt({ prompt, myId, myHand, onJustSayNo, onA
         style={{ background: 'linear-gradient(160deg, #1c1c2e 0%, #12121e 100%)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '24px', padding: '28px 24px', boxShadow: '0 25px 50px rgba(0,0,0,0.7)' }}>
 
         {/* Timer bar */}
-        <div className="mb-6">
-          <div className="flex justify-between text-xs mb-1.5">
+        <div className="mb-4">
+          <div className="flex justify-between items-center text-xs mb-1.5">
             <span className="text-gray-500">Time to respond</span>
-            <span className="font-bold" style={{ color: timerColor }}>{timeLeft}s</span>
+            <div className="flex items-center gap-2">
+              {!timeExtended && (
+                <button
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
+                  style={{ background: 'rgba(255,255,255,0.08)', color: '#9ca3af' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.14)'; e.currentTarget.style.color = '#fff'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#9ca3af'; }}
+                  onClick={() => { setTimeLeft(t => t + 30); setTimeExtended(true); }}
+                >
+                  +30s
+                </button>
+              )}
+              <span className="font-bold tabular-nums" style={{ color: timerColor }}>{timeLeft}s</span>
+            </div>
           </div>
           <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
             <div
@@ -183,7 +202,7 @@ export default function JustSayNoPrompt({ prompt, myId, myHand, onJustSayNo, onA
               {ACTION_LABELS[prompt.type] || 'Action Card!'}
             </h2>
             <p className="text-gray-300 text-sm mb-1">
-              <span className="font-bold text-white">{prompt.fromPlayerName || 'Opponent'}</span> played this against you.
+              <span className="font-bold text-white">{requesterName}</span> played this against you.
             </p>
             {prompt.amount > 0 && (
               <div className="my-3 text-3xl font-black text-yellow-400">${prompt.amount}M</div>
@@ -191,6 +210,20 @@ export default function JustSayNoPrompt({ prompt, myId, myHand, onJustSayNo, onA
             <p className="text-gray-500 text-xs mb-3">Accept or use Just Say No</p>
             <ActionPreview type={prompt.type} details={prompt.details} />
           </>
+        )}
+
+        {/* Holdings peek */}
+        {requesterPlayer && (
+          <div className="mb-4">
+            <button
+              className="text-xs font-semibold transition-colors w-full text-left"
+              style={{ color: showPeek ? '#60a5fa' : '#4b5563' }}
+              onClick={() => setShowPeek(s => !s)}
+            >
+              {showPeek ? '▲ Hide' : '▼ View'} {requesterName}'s holdings
+            </button>
+            {showPeek && <PlayerPeek player={requesterPlayer} />}
+          </div>
         )}
 
         {/* Actions */}
