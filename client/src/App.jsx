@@ -6,7 +6,9 @@ import Board from './components/Board';
 export default function App() {
   const { state, actions } = useGameState();
 
-  if (state.screen === 'game' && state.gameState?.status === 'playing') {
+  // Show the Board for both 'playing' and 'finished' states — the Leaderboard
+  // overlay renders on top of the Board when the game ends (status === 'finished').
+  if (state.screen === 'game' && state.gameState) {
     return <Board state={state} actions={actions} />;
   }
 
