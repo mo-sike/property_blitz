@@ -619,8 +619,8 @@ function GameSidebar({ moves, chatMessages, myId, onSendChat }) {
               <form onSubmit={sendChat}
                 className="flex items-center gap-1.5 px-2 py-1.5 border-t border-white/8">
                 <input
-                  className="flex-1 bg-white/8 text-white text-xs px-2.5 py-1.5 rounded-xl outline-none placeholder-gray-600 focus:bg-white/12 transition-colors"
-                  style={{ minWidth: 0, border: '1px solid rgba(255,255,255,0.10)' }}
+                  className="flex-1 text-xs px-2.5 py-1.5 rounded-xl outline-none placeholder-gray-600 transition-colors"
+                  style={{ minWidth: 0, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.08)', color: 'white' }}
                   placeholder="Type a message…"
                   value={chatInput}
                   onChange={e => setChatInput(e.target.value)}
