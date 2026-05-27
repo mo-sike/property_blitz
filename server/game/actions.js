@@ -131,11 +131,7 @@ function handleAction(room, player, card, opts) {
       return { ok: true };
 
     case 'doubleRent':
-      removeFromHand(player, card.id);
-      room.discardPile.push(card);
-      room.doubleRentActive = true;
-      room.playsRemainingThisTurn--;
-      return { ok: true };
+      return { error: 'Double the Rent must be played alongside a rent card, not separately' };
 
     case 'house': {
       if (!targetSet) return { error: 'Must specify targetSet color' };
@@ -292,11 +288,9 @@ function handleRent(room, player, card, opts) {
       return { error: 'Must choose a valid rent color' };
     }
 
-    const presetDouble = room.doubleRentActive;
-    room.doubleRentActive = false;
-
+    // Double the Rent must be played alongside this rent card (not pre-played).
     let playedDoubleCard = false;
-    if (useDoubleRent && !presetDouble) {
+    if (useDoubleRent) {
       const drc = player.hand.find(c => c.type === 'action' && c.subtype === 'doubleRent');
       if (drc) {
         if (room.playsRemainingThisTurn < 2) return { error: 'Need 2 plays for Rent + Double the Rent' };
@@ -306,7 +300,7 @@ function handleRent(room, player, card, opts) {
       }
     }
 
-    const applyDouble = presetDouble || playedDoubleCard;
+    const applyDouble = playedDoubleCard;
     let amount = getRentForColor(destinationColor, player);
     if (applyDouble) amount *= 2;
 
@@ -346,7 +340,6 @@ function handleRent(room, player, card, opts) {
 
     removeFromHand(player, card.id);
     room.discardPile.push(card);
-    room.doubleRentActive = false;
     room.playsRemainingThisTurn--;
 
     room.pendingAction = {

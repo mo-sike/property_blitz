@@ -135,7 +135,6 @@ function sanitize(room) {
     discardPile: room.discardPile.slice(-5), // last 5 discards
     currentPlayerIndex: room.currentPlayerIndex,
     playsRemainingThisTurn: room.playsRemainingThisTurn,
-    doubleRentActive: room.doubleRentActive,
     pendingAction: room.pendingAction
       ? {
           type: room.pendingAction.type,
@@ -200,6 +199,17 @@ io.on('connection', (socket) => {
     doDrawPhase(room);
     const drawnCount = current.hand.length - handBefore;
     pushMove(room, `${current.name} drew ${drawnCount} card${drawnCount !== 1 ? 's' : ''}`);
+
+    // A player may have earned 3 sets during an opponent's previous action
+    // (e.g. received a property via Forced Deal). Per rules they declare on
+    // their own turn — that moment is now, as they begin drawing.
+    const winner = checkAndSetWinner(room);
+    if (winner) {
+      broadcast(room);
+      emitGameOver(room);
+      return;
+    }
+
     broadcast(room);
   });
 
@@ -247,7 +257,6 @@ io.on('connection', (socket) => {
       } else {
         const subLabels = {
           passGo: 'played Pass Go',
-          doubleRent: 'activated Double Rent',
           house: 'placed a House',
           hotel: 'placed a Hotel',
         };
