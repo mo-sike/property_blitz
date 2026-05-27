@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Card from './Card';
-import { getPayableCards } from '../utils/cardHelpers';
+import { getPayableCards, getColorMeta } from '../utils/cardHelpers';
 
 export default function PaymentModal({ prompt, myPlayer, onPay }) {
   const [selected, setSelected] = useState(new Set());
@@ -84,6 +84,15 @@ export default function PaymentModal({ prompt, myPlayer, onPay }) {
             <span className="font-bold text-white text-sm">{prompt.fromPlayerName || 'opponent'}</span>
             <span className="text-2xl font-black text-yellow-400">${owed}M</span>
           </div>
+          {prompt.details?.rentColor && (() => {
+            const meta = getColorMeta(prompt.details.rentColor);
+            return (
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <div className="w-2 h-2 rounded-full" style={{ background: meta.hex }} />
+                <span className="text-xs text-gray-400">{meta.label} rent</span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Debt progress bar */}
