@@ -1,14 +1,19 @@
 import React, { useState } from 'react';
 import PropertySet from './PropertySet';
 import Card from './Card';
-import { countPropertyCards, isCompleteSet, SET_SIZES, getCompleteSets } from '../utils/cardHelpers';
+import SetInspectModal from './SetInspectModal';
+import { countPropertyCards, SET_SIZES, getCompleteSets } from '../utils/cardHelpers';
+import { useIsMobile } from '../utils/useIsMobile';
 
 export default function PlayerArea({
   player, isMe, isCurrent, isWinner,
   onPropertyClick, selectedCardId, small, onWildClick,
 }) {
   const [bankExpanded, setBankExpanded] = useState(false);
-  const bankTotal = (player.bank || []).reduce((s, c) => s + (c.value || 0), 0);
+  const [inspectSet, setInspectSet]     = useState(null);
+  const isMobile = useIsMobile();
+
+  const bankTotal   = (player.bank || []).reduce((s, c) => s + (c.value || 0), 0);
   const filledColors = Object.entries(player.properties || {}).filter(([, stacks]) => stacks.some(s => s.length > 0));
   const completeSets = getCompleteSets(player).length;
 
@@ -24,10 +29,12 @@ export default function PlayerArea({
     <div className="rounded-2xl p-3 transition-all" style={borderStyle}>
       {/* Player header */}
       <div className="flex items-center gap-2.5 mb-3">
-        <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${
-          isMe ? 'bg-yellow-500 text-black' : 'bg-white/15 text-white'
-        }`}
-          style={isCurrent ? { boxShadow: '0 0 0 2px rgba(96,165,250,0.7)' } : {}}>
+        <div
+          className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${
+            isMe ? 'bg-yellow-500 text-black' : 'bg-white/15 text-white'
+          }`}
+          style={isCurrent ? { boxShadow: '0 0 0 2px rgba(96,165,250,0.7)' } : {}}
+        >
           {player.name[0].toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
@@ -77,24 +84,66 @@ export default function PlayerArea({
 
       {/* Properties */}
       {filledColors.length > 0 ? (
-        <div className="space-y-1.5">
+        // Mobile: wrap fanned stacks into a compact grid row
+        // Desktop: vertical list of full-width set rows
+        <div className={isMobile ? 'flex flex-wrap gap-2' : 'space-y-1.5'}>
           {filledColors.flatMap(([color, stacks]) =>
-            stacks.map((cards, stackIdx) => (
-              <PropertySet
-                key={`${color}-${stackIdx}`}
-                color={color}
-                cards={cards}
-                isComplete={countPropertyCards(cards) >= (SET_SIZES[color] || Infinity)}
-                small
-                selectedCardId={selectedCardId}
-                onCardClick={onPropertyClick ? (c) => onPropertyClick(c, color, player) : undefined}
-                onWildClick={isMe && onWildClick ? onWildClick : undefined}
-              />
-            ))
+            stacks.map((cards, stackIdx) => {
+              const isComplete = countPropertyCards(cards) >= (SET_SIZES[color] || Infinity);
+              return (
+                <PropertySet
+                  key={`${color}-${stackIdx}`}
+                  color={color}
+                  cards={cards}
+                  isComplete={isComplete}
+                  small
+                  // Fanned mode on mobile; normal mode on desktop
+                  fanned={isMobile}
+                  onInspect={isMobile
+                    ? () => setInspectSet({ color, cards, isComplete })
+                    : undefined
+                  }
+                  selectedCardId={selectedCardId}
+                  // Desktop only: direct card click for actions / payments
+                  onCardClick={!isMobile && onPropertyClick
+                    ? (c) => onPropertyClick(c, color, player)
+                    : undefined
+                  }
+                  onWildClick={isMe && onWildClick ? onWildClick : undefined}
+                />
+              );
+            })
           )}
         </div>
       ) : (
         <div className="text-xs text-gray-600 italic pl-1">No properties yet</div>
+      )}
+
+      {/* Set inspect modal — opens when a fanned stack is tapped (mobile) */}
+      {inspectSet && (
+        <SetInspectModal
+          color={inspectSet.color}
+          cards={inspectSet.cards}
+          isComplete={inspectSet.isComplete}
+          onClose={() => setInspectSet(null)}
+          selectedCardId={selectedCardId}
+          // Card selection (e.g. Sly Deal target, payment) closes modal after pick
+          onCardClick={onPropertyClick
+            ? (c) => {
+                onPropertyClick(c, inspectSet.color, player);
+                setInspectSet(null);
+              }
+            : undefined
+          }
+          // Wild-move button closes inspect first so WildReassignModal renders cleanly
+          onWildClick={isMe && onWildClick
+            ? (card, color) => {
+                setInspectSet(null);
+                onWildClick(card, color);
+              }
+            : undefined
+          }
+        />
       )}
     </div>
   );
