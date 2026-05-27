@@ -544,9 +544,9 @@ function reassignWild(room, playerId, cardId, newColor) {
   }
   if (!player.properties[newColor]) return { error: 'Invalid color' };
 
-  // Cannot move wild out of a complete set
-  if (countPropertyCards(oldStack) >= SET_SIZES[oldColor]) {
-    return { error: 'Cannot move wild from a complete set mid-action' };
+  // Cannot move wild out of a set that has a house or hotel built on it
+  if (hasHouse(oldStack) || hasHotel(oldStack)) {
+    return { error: 'Cannot move wild from a set with a house or hotel' };
   }
 
   removeFromProperties(player, cardId);
