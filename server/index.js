@@ -132,7 +132,7 @@ function sanitize(room) {
       handCount: p.hand.length,
     })),
     drawPileCount: room.drawPile.length,
-    discardPile: room.discardPile.slice(-5), // last 5 discards
+    discardPile: room.discardPile.slice(-6), // last 6 discards (shown on click)
     currentPlayerIndex: room.currentPlayerIndex,
     playsRemainingThisTurn: room.playsRemainingThisTurn,
     pendingAction: room.pendingAction

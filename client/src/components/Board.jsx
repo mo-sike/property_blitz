@@ -15,6 +15,7 @@ export default function Board({ state, actions }) {
   const [showModal, setShowModal] = useState(false);
   const [wildToMove, setWildToMove] = useState(null); // { card, fromColor }
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [showDiscard, setShowDiscard] = useState(false);
 
   if (!gameState) return null;
 
@@ -70,6 +71,14 @@ export default function Board({ state, actions }) {
   const autoEndActive = canEndTurn && gs.playsRemainingThisTurn === 0;
 
   const [autoEndSecsLeft, setAutoEndSecsLeft] = useState(null);
+
+  // Close discard modal on Escape
+  useEffect(() => {
+    if (!showDiscard) return;
+    const handler = (e) => { if (e.key === 'Escape') setShowDiscard(false); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [showDiscard]);
 
   useEffect(() => {
     if (!autoEndActive) {
@@ -227,17 +236,31 @@ export default function Board({ state, actions }) {
           )}
         </div>
 
-        {/* Discard pile */}
-        <div className="flex flex-col items-center gap-1.5">
+        {/* Discard pile — click to see last 6 cards */}
+        <div
+          className={`flex flex-col items-center gap-1.5 ${gs.discardPile?.length > 0 ? 'cursor-pointer' : ''}`}
+          onClick={gs.discardPile?.length > 0 ? () => setShowDiscard(true) : undefined}
+        >
           {gs.discardPile?.length > 0 ? (
-            <Card card={gs.discardPile[gs.discardPile.length - 1]} small />
+            <div className="relative">
+              <Card card={gs.discardPile[gs.discardPile.length - 1]} small />
+              {/* Count badge */}
+              <span
+                className="absolute -bottom-1.5 -right-1.5 bg-gray-800 text-gray-300 text-[9px] font-bold rounded-md px-1 py-0.5 leading-none"
+                style={{ border: '1px solid rgba(255,255,255,0.15)' }}
+              >
+                {gs.discardPile.length}
+              </span>
+            </div>
           ) : (
             <div className="w-14 h-20 rounded-xl flex items-center justify-center"
               style={{ border: '2px dashed rgba(255,255,255,0.12)' }}>
               <span className="text-xs text-gray-600">—</span>
             </div>
           )}
-          <p className="text-xs text-gray-500">Discard</p>
+          <p className="text-xs text-gray-500">
+            Discard{gs.discardPile?.length > 0 ? ' ↗' : ''}
+          </p>
         </div>
       </div>
 
@@ -281,6 +304,54 @@ export default function Board({ state, actions }) {
             onCardClick={handleCardClick}
             disabled={!isMyTurn || !gs.hasDrawnThisTurn || !!pa || gs.playsRemainingThisTurn <= 0}
           />
+        </div>
+      )}
+
+      {/* ── Discard pile inspector ──────────────────────────────────────── */}
+      {showDiscard && gs.discardPile && gs.discardPile.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          onClick={() => setShowDiscard(false)}
+        >
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-xs bg-gray-900 rounded-t-2xl sm:rounded-2xl border border-white/10 shadow-2xl p-4"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Mobile handle */}
+            <div className="sm:hidden w-10 h-1 bg-white/20 rounded-full mx-auto mb-3" />
+
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-gray-400 font-semibold">
+                Discard pile &nbsp;·&nbsp; {gs.discardPile.length} card{gs.discardPile.length !== 1 ? 's' : ''}
+              </span>
+              <span className="text-[10px] text-gray-600">most recent →</span>
+            </div>
+
+            {/* Scrollable row — most recent card on the left */}
+            <div className="flex gap-2 overflow-x-auto thin-scroll pb-2">
+              {[...gs.discardPile].reverse().map((c, i) => (
+                <div key={c.id ?? i} className="flex-shrink-0 relative">
+                  <Card card={c} small />
+                  {i === 0 && (
+                    <span
+                      className="absolute -top-1.5 -right-1.5 text-[8px] font-black px-1 py-0.5 rounded leading-none"
+                      style={{ background: 'rgba(59,130,246,0.9)', color: '#fff' }}
+                    >
+                      TOP
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowDiscard(false)}
+              className="mt-3 w-full py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/60 text-xs font-semibold transition-colors"
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
 

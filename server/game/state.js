@@ -164,7 +164,7 @@ function finalizeDisconnect(socketId) {
 function calculateLeaderboard(room) {
   const entries = room.players.map(p => {
     const bankValue = (p.bank || []).reduce((s, c) => s + (c.value || 0), 0);
-    const propValue = Object.values(p.properties || {}).flat().reduce((s, c) => s + (c.value || 0), 0);
+    const propValue = Object.values(p.properties || {}).flat(2).reduce((s, c) => s + (c.value || 0), 0);
     return {
       id: p.id,
       name: p.name,
