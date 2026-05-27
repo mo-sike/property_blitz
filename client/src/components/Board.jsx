@@ -7,6 +7,7 @@ import JustSayNoPrompt from './JustSayNoPrompt';
 import PaymentModal from './PaymentModal';
 import WildReassignModal from './WildReassignModal';
 import Leaderboard from './Leaderboard';
+import DiscardModal from './DiscardModal';
 import { canBeStolen, isCompleteSet, SET_SIZES, COLOR_META, RENT_VALUES, getCompleteSets, getBankTotal } from '../utils/cardHelpers';
 
 export default function Board({ state, actions }) {
@@ -16,6 +17,7 @@ export default function Board({ state, actions }) {
   const [wildToMove, setWildToMove] = useState(null); // { card, fromColor }
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showDiscard, setShowDiscard] = useState(false);
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
 
   if (!gameState) return null;
 
@@ -56,14 +58,6 @@ export default function Board({ state, actions }) {
   function handleWildMove(newColor) {
     actions.reassignWild(wildToMove.card.id, newColor);
     setWildToMove(null);
-  }
-
-  function handleDiscard() {
-    if (!myPlayer) return;
-    const excess = myPlayer.hand.length - 7;
-    if (excess <= 0) return;
-    const sorted = [...myPlayer.hand].sort((a, b) => (a.value || 0) - (b.value || 0));
-    actions.discardCards(sorted.slice(0, excess).map(c => c.id));
   }
 
   const needsDiscard = isMyTurn && myPlayer && myPlayer.hand.length > 7;
@@ -196,8 +190,8 @@ export default function Board({ state, actions }) {
             </div>
           )}
           {needsDiscard && (
-            <button className="btn-danger w-full text-sm" onClick={handleDiscard}>
-              Discard {myPlayer.hand.length - 7} card{myPlayer.hand.length - 7 !== 1 ? 's' : ''}
+            <button className="btn-danger w-full text-sm" onClick={() => setShowDiscardModal(true)}>
+              Discard {myPlayer.hand.length - 7} card{myPlayer.hand.length - 7 !== 1 ? 's' : ''} ✕
             </button>
           )}
           {pa && (
@@ -353,6 +347,19 @@ export default function Board({ state, actions }) {
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── Discard selection modal ─────────────────────────────────────── */}
+      {showDiscardModal && myPlayer && needsDiscard && (
+        <DiscardModal
+          cards={myPlayer.hand}
+          excess={myPlayer.hand.length - 7}
+          onConfirm={(cardIds) => {
+            actions.discardCards(cardIds);
+            setShowDiscardModal(false);
+          }}
+          onCancel={() => setShowDiscardModal(false)}
+        />
       )}
 
       {/* ── Leaderboard / Game Over overlay ─────────────────────────────── */}
