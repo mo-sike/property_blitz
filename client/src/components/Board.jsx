@@ -378,6 +378,7 @@ export default function Board({ state, actions }) {
           prompt={pa}
           myId={myId}
           myHand={myPlayer?.hand}
+          requesterPlayer={gs.players.find(p => p.id === pa?.fromPlayerId)}
           onJustSayNo={actions.justSayNo}
           onAccept={actions.acceptAction}
         />
@@ -386,6 +387,7 @@ export default function Board({ state, actions }) {
         <PaymentModal
           prompt={pa}
           myPlayer={myPlayer}
+          requesterPlayer={gs.players.find(p => p.id === pa?.fromPlayerId)}
           onPay={actions.payDebt}
         />
       )}

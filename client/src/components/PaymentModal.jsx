@@ -1,19 +1,52 @@
 import React, { useState, useEffect } from 'react';
 import Card from './Card';
+import PlayerPeek from './PlayerPeek';
 import { getPayableCards, getColorMeta } from '../utils/cardHelpers';
 
-export default function PaymentModal({ prompt, myPlayer, onPay }) {
+/**
+ * Auto-select cards to cover `owed` using cash first, then cheapest properties.
+ * Returns the minimum set of cards whose total >= owed, or all cards if still short.
+ */
+function autoSelectPayment(payable, owed) {
+  const total = payable.reduce((s, c) => s + (c.value || 0), 0);
+  if (total <= owed) return payable;
+
+  // Bank cards (money/actions played as cash) desc by value, then properties asc
+  const cash = payable
+    .filter(c => c.fromArea === 'bank')
+    .sort((a, b) => (b.value || 0) - (a.value || 0));
+  const props = payable
+    .filter(c => c.fromArea === 'property')
+    .sort((a, b) => (a.value || 0) - (b.value || 0));
+
+  const selected = [];
+  let sum = 0;
+  for (const card of [...cash, ...props]) {
+    if (sum >= owed) break;
+    selected.push(card);
+    sum += card.value || 0;
+  }
+  return selected;
+}
+
+export default function PaymentModal({ prompt, myPlayer, requesterPlayer, onPay }) {
   const [selected, setSelected] = useState(new Set());
   const [timeLeft, setTimeLeft] = useState(30);
+  const [timeExtended, setTimeExtended] = useState(false);
+  const [showPeek, setShowPeek] = useState(false);
 
   useEffect(() => {
     setTimeLeft(30);
+    setTimeExtended(false);
+    setShowPeek(false);
     const interval = setInterval(() => {
       setTimeLeft(t => {
         if (t <= 1) {
           clearInterval(interval);
+          // Smart auto-debit: cash first, then cheapest properties
           const payable = getPayableCards(myPlayer);
-          onPay(payable.map(c => c.id));
+          const autoSelected = autoSelectPayment(payable, prompt?.amount || 0);
+          onPay(autoSelected.map(c => c.id));
           return 0;
         }
         return t - 1;
@@ -34,6 +67,9 @@ export default function PaymentModal({ prompt, myPlayer, onPay }) {
   const canConfirm = canAfford ? enoughSelected : selected.size === payable.length;
   const fillPercent = Math.min(totalSelected / owed, 1) * 100;
   const overpaying = totalSelected > owed && canAfford;
+  const requesterName = requesterPlayer?.name || prompt.fromPlayerName || 'opponent';
+
+  const timerColor = timeLeft <= 10 ? '#ef4444' : timeLeft <= 20 ? '#f59e0b' : '#22c55e';
 
   function toggle(cardId) {
     setSelected(prev => {
@@ -60,28 +96,37 @@ export default function PaymentModal({ prompt, myPlayer, onPay }) {
 
         {/* Timer bar */}
         <div className="mb-5">
-          <div className="flex justify-between text-xs mb-1.5">
+          <div className="flex justify-between items-center text-xs mb-1.5">
             <span className="text-gray-500">Time to pay</span>
-            <span className="font-bold tabular-nums" style={{ color: timeLeft <= 10 ? '#ef4444' : timeLeft <= 20 ? '#f59e0b' : '#22c55e' }}>{timeLeft}s</span>
+            <div className="flex items-center gap-2">
+              {!timeExtended && (
+                <button
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
+                  style={{ background: 'rgba(255,255,255,0.08)', color: '#9ca3af' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.14)'; e.currentTarget.style.color = '#fff'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#9ca3af'; }}
+                  onClick={() => { setTimeLeft(t => t + 30); setTimeExtended(true); }}
+                >
+                  +30s
+                </button>
+              )}
+              <span className="font-bold tabular-nums" style={{ color: timerColor }}>{timeLeft}s</span>
+            </div>
           </div>
           <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
             <div
               className="h-full rounded-full transition-all duration-1000"
-              style={{
-                width: `${(timeLeft / 30) * 100}%`,
-                background: timeLeft <= 10 ? '#ef4444' : timeLeft <= 20 ? '#f59e0b' : '#22c55e',
-                boxShadow: `0 0 8px ${timeLeft <= 10 ? '#ef4444' : timeLeft <= 20 ? '#f59e0b' : '#22c55e'}`,
-              }}
+              style={{ width: `${(timeLeft / 30) * 100}%`, background: timerColor, boxShadow: `0 0 8px ${timerColor}` }}
             />
           </div>
         </div>
 
         {/* Header */}
-        <div className="mb-5">
+        <div className="mb-4">
           <h2 className="text-xl font-black mb-1">Pay Debt</h2>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-gray-300 text-sm">You owe</span>
-            <span className="font-bold text-white text-sm">{prompt.fromPlayerName || 'opponent'}</span>
+            <span className="font-bold text-white text-sm">{requesterName}</span>
             <span className="text-2xl font-black text-yellow-400">${owed}M</span>
           </div>
           {prompt.details?.rentColor && (() => {
@@ -94,6 +139,20 @@ export default function PaymentModal({ prompt, myPlayer, onPay }) {
             );
           })()}
         </div>
+
+        {/* Holdings peek toggle */}
+        {requesterPlayer && (
+          <div className="mb-4">
+            <button
+              className="text-xs font-semibold transition-colors"
+              style={{ color: showPeek ? '#60a5fa' : '#4b5563' }}
+              onClick={() => setShowPeek(s => !s)}
+            >
+              {showPeek ? '▲ Hide' : '▼ View'} {requesterName}'s holdings
+            </button>
+            {showPeek && <PlayerPeek player={requesterPlayer} />}
+          </div>
+        )}
 
         {/* Debt progress bar */}
         <div className="mb-4">
@@ -129,6 +188,15 @@ export default function PaymentModal({ prompt, myPlayer, onPay }) {
               <button className="btn-ghost text-xs py-1 px-3" onClick={() => setSelected(new Set())}>
                 Clear
               </button>
+              <button
+                className="btn-ghost text-xs py-1 px-3"
+                onClick={() => {
+                  const auto = autoSelectPayment(payable, owed);
+                  setSelected(new Set(auto.map(c => c.id)));
+                }}
+              >
+                Auto-select
+              </button>
               <span className="ml-auto text-xs text-gray-500 self-center">
                 Available: ${totalAvailable}M
               </span>
@@ -144,7 +212,6 @@ export default function PaymentModal({ prompt, myPlayer, onPay }) {
                       <div className={`transition-all duration-150 rounded-xl ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-transparent scale-105' : 'opacity-70 group-hover:opacity-100'}`}>
                         <Card card={c} small />
                       </div>
-                      {/* Selection badge */}
                       {isSelected && (
                         <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-black text-black pointer-events-none"
                           style={{ background: '#facc15', boxShadow: '0 2px 6px rgba(250,204,21,0.5)' }}>
