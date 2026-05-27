@@ -1,24 +1,38 @@
 const { SET_SIZES } = require('./deck');
 
-function countPropertyCards(colorArr) {
-  return colorArr.filter(c => c.type === 'property' || c.type === 'wildProperty').length;
+function countPropertyCards(arr) {
+  return arr.filter(c => c.type === 'property' || c.type === 'wildProperty').length;
 }
 
-function hasHouse(colorArr) {
-  return colorArr.some(c => c.type === 'action' && c.subtype === 'house');
+function hasHouse(arr) {
+  return arr.some(c => c.type === 'action' && c.subtype === 'house');
 }
 
-function hasHotel(colorArr) {
-  return colorArr.some(c => c.type === 'action' && c.subtype === 'hotel');
+function hasHotel(arr) {
+  return arr.some(c => c.type === 'action' && c.subtype === 'hotel');
 }
 
+// properties[color] is now Card[][] (array of stacks).
+// A color is "complete" when at least one stack has >= SET_SIZES[color] property cards.
 function isCompleteSet(color, player) {
-  const arr = player.properties[color] || [];
-  return countPropertyCards(arr) >= SET_SIZES[color];
+  const stacks = player.properties[color] || [];
+  const size = SET_SIZES[color];
+  if (!size) return false;
+  return stacks.some(stack => countPropertyCards(stack) >= size);
 }
 
+// Returns one entry per complete stack (may contain duplicate colors if a
+// player somehow has two complete stacks of the same color).
 function getCompleteSets(player) {
-  return Object.keys(SET_SIZES).filter(color => isCompleteSet(color, player));
+  const result = [];
+  for (const [color, stacks] of Object.entries(player.properties || {})) {
+    const size = SET_SIZES[color];
+    if (!size) continue;
+    for (const stack of stacks) {
+      if (countPropertyCards(stack) >= size) result.push(color);
+    }
+  }
+  return result;
 }
 
 function getBankTotal(player) {
@@ -29,12 +43,13 @@ function checkWin(player) {
   return getCompleteSets(player).length >= 3 && getBankTotal(player) >= 10;
 }
 
-// Cards in a set that can be targeted by Sly/Forced Deal (NOT from a complete set)
+// A card can be stolen only if its specific stack is NOT a complete set.
 function canBeStolen(card, ownerPlayer) {
-  for (const [color, arr] of Object.entries(ownerPlayer.properties)) {
-    if (!arr.find(c => c.id === card.id)) continue;
-    if (isCompleteSet(color, ownerPlayer)) return false;
-    return true;
+  for (const [color, stacks] of Object.entries(ownerPlayer.properties || {})) {
+    for (const stack of stacks) {
+      if (!stack.find(c => c.id === card.id)) continue;
+      return countPropertyCards(stack) < (SET_SIZES[color] || Infinity);
+    }
   }
   return false;
 }
@@ -48,41 +63,52 @@ function findCardInBank(player, cardId) {
 }
 
 function findCardInProperties(player, cardId) {
-  for (const arr of Object.values(player.properties)) {
-    const c = arr.find(c => c.id === cardId);
-    if (c) return c;
+  for (const stacks of Object.values(player.properties || {})) {
+    for (const stack of stacks) {
+      const c = stack.find(c => c.id === cardId);
+      if (c) return c;
+    }
   }
   return null;
 }
 
 function findPropertyColor(player, cardId) {
-  for (const [color, arr] of Object.entries(player.properties)) {
-    if (arr.find(c => c.id === cardId)) return color;
+  for (const [color, stacks] of Object.entries(player.properties || {})) {
+    for (const stack of stacks) {
+      if (stack.find(c => c.id === cardId)) return color;
+    }
   }
   return null;
 }
 
 function getRentForColor(color, player) {
-  const arr = player.properties[color] || [];
-  const count = countPropertyCards(arr);
-  if (count === 0) return 0;
+  const stacks = player.properties[color] || [];
   const { RENT_VALUES } = require('./deck');
-  const table = RENT_VALUES[color];
-  const base = table[Math.min(count, table.length) - 1] || 0;
-  let bonus = 0;
-  if (hasHouse(arr)) bonus += 3;
-  if (hasHotel(arr)) bonus += 4;
-  return base + bonus;
+  let maxRent = 0;
+  for (const stack of stacks) {
+    const count = countPropertyCards(stack);
+    if (count === 0) continue;
+    const table = RENT_VALUES[color];
+    const base = table[Math.min(count, table.length) - 1] || 0;
+    let bonus = 0;
+    if (hasHouse(stack)) bonus += 3;
+    if (hasHotel(stack)) bonus += 4;
+    maxRent = Math.max(maxRent, base + bonus);
+  }
+  return maxRent;
 }
 
-// Get all cards a player can legally pay with (not rainbow wilds)
+// All cards a player can legally pay with (not rainbow wilds).
+// Returns copies with { from: 'bank' } or { from: 'property', fromColor }.
 function getPayableCards(player) {
   const cards = [];
-  for (const c of player.bank) cards.push({ ...c, from: 'bank' });
-  for (const [color, arr] of Object.entries(player.properties)) {
-    for (const c of arr) {
-      if (c.isRainbowWild) continue;
-      cards.push({ ...c, fromColor: color, from: 'property' });
+  for (const c of player.bank || []) cards.push({ ...c, from: 'bank' });
+  for (const [color, stacks] of Object.entries(player.properties || {})) {
+    for (const stack of stacks) {
+      for (const c of stack) {
+        if (c.isRainbowWild) continue;
+        cards.push({ ...c, fromColor: color, from: 'property' });
+      }
     }
   }
   return cards;

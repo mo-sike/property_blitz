@@ -26,8 +26,8 @@ export default function WildReassignModal({ card, fromColor, playerProperties, o
           {validColors.map(color => {
             const isCurrent = color === fromColor;
             const meta = getColorMeta(color);
-            const arr = playerProperties[color] || [];
-            const propCount = countPropertyCards(arr);
+            const stacks = playerProperties[color] || [];
+            const propCount = countPropertyCards(stacks.flat());
             const setSize = SET_SIZES[color];
 
             return (
