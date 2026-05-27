@@ -11,7 +11,7 @@ import DiscardModal from './DiscardModal';
 import { canBeStolen, isCompleteSet, SET_SIZES, COLOR_META, RENT_VALUES, getCompleteSets, getBankTotal } from '../utils/cardHelpers';
 
 export default function Board({ state, actions }) {
-  const { gameState, myId, actionPrompt, errorMessage, chatMessages = [] } = state;
+  const { gameState, myId, actionPrompt, errorMessage, chatMessages = [], endGameRequest, endGameRequestStatus } = state;
   const [selectedCard, setSelectedCard] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [wildToMove, setWildToMove] = useState(null); // { card, fromColor }
@@ -60,6 +60,7 @@ export default function Board({ state, actions }) {
     setWildToMove(null);
   }
 
+  const isHost = myId === gs.hostId;
   const needsDiscard = isMyTurn && myPlayer && myPlayer.hand.length > 7;
   const canEndTurn = isMyTurn && gs.hasDrawnThisTurn && !pa && !needsDiscard;
   const autoEndActive = canEndTurn && gs.playsRemainingThisTurn === 0;
@@ -73,6 +74,13 @@ export default function Board({ state, actions }) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [showDiscard]);
+
+  // Auto-clear end game request status notification after 5 s
+  useEffect(() => {
+    if (!endGameRequestStatus) return;
+    const t = setTimeout(() => actions.clearEndGameRequestStatus(), 5000);
+    return () => clearTimeout(t);
+  }, [endGameRequestStatus]);
 
   useEffect(() => {
     if (!autoEndActive) {
@@ -202,30 +210,71 @@ export default function Board({ state, actions }) {
 
           {/* End Game */}
           {!pa && !gs.winner && (
-            <div className="flex items-center justify-center gap-2 mt-1">
-              {!showEndConfirm ? (
-                <button
-                  className="text-xs text-gray-600 hover:text-red-400 transition-colors"
-                  onClick={() => setShowEndConfirm(true)}
-                >
-                  End Game
-                </button>
-              ) : (
-                <>
-                  <button
-                    className="text-xs font-semibold text-white bg-red-600 hover:bg-red-500 px-3 py-1 rounded-lg transition-colors"
-                    onClick={() => { actions.endGame(); setShowEndConfirm(false); }}
-                  >
-                    Confirm End
-                  </button>
-                  <button
-                    className="text-xs text-gray-500 hover:text-white transition-colors"
-                    onClick={() => setShowEndConfirm(false)}
-                  >
-                    Cancel
-                  </button>
-                </>
+            <div className="flex flex-col items-center gap-1.5 mt-1">
+              {/* Host end-game request banner */}
+              {isHost && endGameRequest && (
+                <div className="w-full rounded-xl px-3 py-2 text-center animate-bounce-in"
+                  style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)' }}>
+                  <p className="text-xs text-red-300 font-semibold mb-1.5">
+                    <span className="text-white font-bold">{endGameRequest.fromPlayerName}</span> wants to end the game
+                  </p>
+                  <div className="flex justify-center gap-2">
+                    <button
+                      className="text-xs font-bold px-3 py-1 rounded-lg transition-colors"
+                      style={{ background: 'rgba(239,68,68,0.7)', color: 'white' }}
+                      onClick={() => actions.respondEndGame(true)}
+                    >
+                      End Game
+                    </button>
+                    <button
+                      className="text-xs px-3 py-1 rounded-lg transition-colors"
+                      style={{ background: 'rgba(255,255,255,0.08)', color: '#9ca3af' }}
+                      onClick={() => actions.respondEndGame(false)}
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
               )}
+
+              {/* Non-host request status */}
+              {!isHost && endGameRequestStatus && (
+                <div className="text-xs px-3 py-1.5 rounded-xl text-center"
+                  style={{
+                    background: endGameRequestStatus === 'declined' ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)',
+                    color: endGameRequestStatus === 'declined' ? '#fca5a5' : '#93c5fd',
+                    border: `1px solid ${endGameRequestStatus === 'declined' ? 'rgba(239,68,68,0.3)' : 'rgba(59,130,246,0.3)'}`,
+                  }}>
+                  {endGameRequestStatus === 'declined' ? 'Host declined the end game request' : 'End game request sent to host…'}
+                </div>
+              )}
+
+              {/* End Game / Request button */}
+              <div className="flex items-center justify-center gap-2">
+                {!showEndConfirm ? (
+                  <button
+                    className="text-xs text-gray-600 hover:text-red-400 transition-colors"
+                    onClick={() => setShowEndConfirm(true)}
+                  >
+                    {isHost ? 'End Game' : 'Request End Game'}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className="text-xs font-semibold text-white bg-red-600 hover:bg-red-500 px-3 py-1 rounded-lg transition-colors"
+                      onClick={() => { actions.endGame(); setShowEndConfirm(false); }}
+                    >
+                      {isHost ? 'Confirm End' : 'Send Request'}
+                    </button>
+                    <button
+                      className="text-xs text-gray-500 hover:text-white transition-colors"
+                      onClick={() => setShowEndConfirm(false)}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>

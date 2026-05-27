@@ -24,6 +24,8 @@ const initialState = {
   leaderboard: null,
   gameOverReason: null,
   chatMessages: [],
+  endGameRequest: null,       // { fromPlayerId, fromPlayerName } — shown to host
+  endGameRequestStatus: null, // 'sent' | 'declined' — shown to requester
 };
 
 export function useGameState() {
@@ -46,7 +48,16 @@ export function useGameState() {
     },
     game_over: ({ leaderboard, reason }) => {
       clearSession();
-      update({ leaderboard, gameOverReason: reason, actionPrompt: null });
+      update({ leaderboard, gameOverReason: reason, actionPrompt: null, endGameRequest: null, endGameRequestStatus: null });
+    },
+    end_game_requested: ({ fromPlayerId, fromPlayerName }) => {
+      update({ endGameRequest: { fromPlayerId, fromPlayerName } });
+    },
+    end_game_request_sent: () => {
+      update({ endGameRequestStatus: 'sent' });
+    },
+    end_game_request_declined: () => {
+      update({ endGameRequestStatus: 'declined' });
     },
     room_created: ({ roomCode }) => {
       setState(prev => {
@@ -144,6 +155,11 @@ export function useGameState() {
     endGame: () => {
       emit('end_game');
     },
+    respondEndGame: (accept) => {
+      emit('respond_end_game', { accept });
+      update({ endGameRequest: null });
+    },
+    clearEndGameRequestStatus: () => update({ endGameRequestStatus: null }),
     sendChat: (text) => {
       emit('chat_message', { text });
     },

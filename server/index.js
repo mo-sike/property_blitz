@@ -484,8 +484,33 @@ io.on('connection', (socket) => {
     if (!room || room.status !== 'playing') return;
     const player = room.players.find(p => p.id === socket.id);
     if (!player || !player.connected) return;
+
+    if (room.hostId !== socket.id) {
+      // Non-host: forward request to host
+      io.to(room.hostId).emit('end_game_requested', {
+        fromPlayerId: socket.id,
+        fromPlayerName: player.name,
+      });
+      socket.emit('end_game_request_sent');
+      return;
+    }
+
     emitGameOver(room, 'manual');
     broadcast(room);
+  });
+
+  socket.on('respond_end_game', ({ accept }) => {
+    const room = getRoomBySocket(socket.id);
+    if (!room || room.status !== 'playing') return;
+    if (room.hostId !== socket.id) return;
+
+    if (accept) {
+      emitGameOver(room, 'manual');
+      broadcast(room);
+    } else {
+      const host = room.players.find(p => p.id === socket.id);
+      io.to(room.roomCode).emit('end_game_request_declined', { hostName: host?.name });
+    }
   });
 
   socket.on('disconnect', () => {
