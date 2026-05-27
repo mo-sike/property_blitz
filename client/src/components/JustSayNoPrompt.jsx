@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getColorMeta } from '../utils/cardHelpers';
 
 const ACTION_LABELS = {
   rent: 'Rent Charge',
@@ -13,6 +14,89 @@ const ACTION_ICONS = {
   rent: '🏦', debtCollector: '💰', birthday: '🎂',
   slyDeal: '🤫', forcedDeal: '🔄', dealBreaker: '💣',
 };
+
+function cardDisplayName(card) {
+  if (!card) return 'Property';
+  if (card.isRainbowWild || card.colors?.[0] === 'rainbow') return 'Rainbow Wild';
+  if (card.type === 'wildProperty') {
+    return `${getColorMeta(card.color || card.colors?.[0]).label} Wild`;
+  }
+  return `${getColorMeta(card.color).label} Property`;
+}
+
+function PropertyChip({ card, label }) {
+  if (!card) return null;
+  const displayColor = card.color || card.colors?.[0];
+  const meta = getColorMeta(displayColor);
+  return (
+    <div className="flex-1 min-w-0">
+      {label && <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">{label}</div>}
+      <div
+        className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg"
+        style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
+      >
+        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: meta.hex }} />
+        <span className="text-white text-xs font-semibold truncate">{cardDisplayName(card)}</span>
+        <span className="text-yellow-400 text-xs font-bold ml-auto tabular-nums">${card.value || 0}M</span>
+      </div>
+    </div>
+  );
+}
+
+function SetChip({ color, cards }) {
+  if (!color) return null;
+  const meta = getColorMeta(color);
+  const total = (cards || []).reduce((s, c) => s + (c.value || 0), 0);
+  const count = cards?.length || 0;
+  return (
+    <div
+      className="flex items-center gap-2 px-3 py-2.5 rounded-lg w-full"
+      style={{ background: 'rgba(255,255,255,0.07)', border: `1px solid ${meta.hex}55` }}
+    >
+      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: meta.hex }} />
+      <span className="text-white text-sm font-semibold">{meta.label} Set</span>
+      <span className="text-gray-500 text-xs">{count} card{count !== 1 ? 's' : ''}</span>
+      <span className="text-yellow-400 text-sm font-black ml-auto tabular-nums">${total}M</span>
+    </div>
+  );
+}
+
+function ActionPreview({ type, details }) {
+  if (!details) return null;
+
+  if (type === 'slyDeal' && details.targetCard) {
+    return (
+      <div className="mb-4 text-left">
+        <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1.5">Stealing your:</p>
+        <PropertyChip card={details.targetCard} />
+      </div>
+    );
+  }
+
+  if (type === 'forcedDeal' && (details.targetCard || details.offeredCard)) {
+    return (
+      <div className="mb-4 text-left">
+        <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1.5">Forced swap:</p>
+        <div className="flex items-end gap-1.5">
+          <PropertyChip card={details.offeredCard} label="They give you" />
+          <span className="text-gray-500 pb-2 flex-shrink-0 text-sm">↔</span>
+          <PropertyChip card={details.targetCard} label="They take" />
+        </div>
+      </div>
+    );
+  }
+
+  if (type === 'dealBreaker' && details.targetSetColor) {
+    return (
+      <div className="mb-4 text-left">
+        <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1.5">Stealing your complete set:</p>
+        <SetChip color={details.targetSetColor} cards={details.targetSetCards} />
+      </div>
+    );
+  }
+
+  return null;
+}
 
 export default function JustSayNoPrompt({ prompt, myId, myHand, onJustSayNo, onAccept }) {
   const [timeLeft, setTimeLeft] = useState(30);
@@ -83,13 +167,15 @@ export default function JustSayNoPrompt({ prompt, myId, myHand, onJustSayNo, onA
           <>
             <h2 className="text-xl font-black mb-2 text-red-300">Just Say No Played!</h2>
             <p className="text-gray-300 text-sm mb-1">Your action was countered.</p>
-            <p className="text-gray-500 text-xs mb-5">Counter back or let it stand.</p>
+            <p className="text-gray-500 text-xs mb-3">Counter back or let it stand.</p>
+            <ActionPreview type={prompt.type} details={prompt.details} />
           </>
         ) : isJsnChain ? (
           <>
             <h2 className="text-xl font-black mb-2 text-yellow-300">JSN Countered!</h2>
             <p className="text-gray-300 text-sm mb-1">Your Just Say No was countered.</p>
-            <p className="text-gray-500 text-xs mb-5">Play another JSN or accept the action.</p>
+            <p className="text-gray-500 text-xs mb-3">Play another JSN or accept the action.</p>
+            <ActionPreview type={prompt.type} details={prompt.details} />
           </>
         ) : (
           <>
@@ -102,7 +188,8 @@ export default function JustSayNoPrompt({ prompt, myId, myHand, onJustSayNo, onA
             {prompt.amount > 0 && (
               <div className="my-3 text-3xl font-black text-yellow-400">${prompt.amount}M</div>
             )}
-            <p className="text-gray-500 text-xs mb-5">Accept or use Just Say No</p>
+            <p className="text-gray-500 text-xs mb-3">Accept or use Just Say No</p>
+            <ActionPreview type={prompt.type} details={prompt.details} />
           </>
         )}
 

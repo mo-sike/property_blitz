@@ -218,7 +218,7 @@ function handleAction(room, player, card, opts) {
         currentResponderId: targetPlayer.id,
         amount: 0,
         remainingTargets: [],
-        details: { targetCardId: targetProperty },
+        details: { targetCardId: targetProperty, targetCard: tCard },
         jsnDepth: 0,
         phase: 'jsnWindow',
       };
@@ -245,7 +245,7 @@ function handleAction(room, player, card, opts) {
         currentResponderId: targetPlayer.id,
         amount: 0,
         remainingTargets: [],
-        details: { targetCardId: targetProperty, offeredCardId: offeredProperty },
+        details: { targetCardId: targetProperty, offeredCardId: offeredProperty, targetCard: tCard, offeredCard: oCard },
         jsnDepth: 0,
         phase: 'jsnWindow',
       };
@@ -257,6 +257,8 @@ function handleAction(room, player, card, opts) {
       if (!targetPlayer || targetPlayer.id === player.id) return { error: 'Invalid target' };
       if (!targetSet) return { error: 'Must specify targetSet color' };
       if (!isCompleteSet(targetSet, targetPlayer)) return { error: 'Target set is not complete' };
+      const dbStacks = targetPlayer.properties[targetSet] || [];
+      const dbStack = dbStacks.find(stack => countPropertyCards(stack) >= SET_SIZES[targetSet]) || [];
       removeFromHand(player, card.id);
       room.discardPile.push(card);
       room.playsRemainingThisTurn--;
@@ -267,7 +269,7 @@ function handleAction(room, player, card, opts) {
         currentResponderId: targetPlayer.id,
         amount: 0,
         remainingTargets: [],
-        details: { targetSetColor: targetSet },
+        details: { targetSetColor: targetSet, targetSetCards: [...dbStack] },
         jsnDepth: 0,
         phase: 'jsnWindow',
       };
