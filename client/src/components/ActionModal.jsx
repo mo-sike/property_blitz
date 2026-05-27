@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Card from './Card';
-import { COLOR_META, SET_SIZES, isCompleteSet, canBeStolen, getPayableCards, RENT_VALUES } from '../utils/cardHelpers';
+import { COLOR_META, SET_SIZES, countPropertyCards, isCompleteSet, canBeStolen, getPayableCards, RENT_VALUES } from '../utils/cardHelpers';
 
 // Universal modal for choosing targets, colors, and confirming action card plays
 export default function ActionModal({ card, gameState, myId, onConfirm, onCancel }) {
@@ -19,7 +19,7 @@ export default function ActionModal({ card, gameState, myId, onConfirm, onCancel
   const others = gameState.players.filter(p => p.id !== myId);
 
   function canBank() {
-    return card.type !== 'property';
+    return card.type !== 'property' && card.type !== 'wildProperty';
   }
   function canPlayAsAction() {
     return card.type === 'action' || card.type === 'rent';
@@ -158,10 +158,11 @@ export default function ActionModal({ card, gameState, myId, onConfirm, onCancel
   if (playAs === 'action' && (card.subtype === 'house' || card.subtype === 'hotel')) {
     const validSets = Object.keys(SET_SIZES).filter(color => {
       if (color === 'railroad' || color === 'utility') return false;
-      if (!isCompleteSet(color, myPlayer)) return false;
-      const arr = myPlayer.properties[color] || [];
-      if (card.subtype === 'house') return !arr.some(c => c.subtype === 'house');
-      return arr.some(c => c.subtype === 'house') && !arr.some(c => c.subtype === 'hotel');
+      const stacks = myPlayer.properties[color] || [];
+      const completeStack = stacks.find(stack => countPropertyCards(stack) >= SET_SIZES[color]);
+      if (!completeStack) return false;
+      if (card.subtype === 'house') return !completeStack.some(c => c.subtype === 'house');
+      return completeStack.some(c => c.subtype === 'house') && !completeStack.some(c => c.subtype === 'hotel');
     });
     if (validSets.length === 0) {
       return (
@@ -233,7 +234,7 @@ export default function ActionModal({ card, gameState, myId, onConfirm, onCancel
   if (playAs === 'action' && card.subtype === 'slyDeal') {
     const target = others.find(p => p.id === targetPlayerId);
     const stealableCards = target
-      ? Object.values(target.properties).flat().filter(c =>
+      ? Object.values(target.properties).flat(2).filter(c =>
           (c.type === 'property' || c.type === 'wildProperty') && canBeStolen(c.id, target)
         )
       : [];
@@ -275,11 +276,11 @@ export default function ActionModal({ card, gameState, myId, onConfirm, onCancel
   // --- Action: Forced Deal ---
   if (playAs === 'action' && card.subtype === 'forcedDeal') {
     const target = others.find(p => p.id === targetPlayerId);
-    const myStealable = Object.values(myPlayer.properties).flat().filter(c =>
+    const myStealable = Object.values(myPlayer.properties).flat(2).filter(c =>
       (c.type === 'property' || c.type === 'wildProperty') && canBeStolen(c.id, myPlayer)
     );
     const theirStealable = target
-      ? Object.values(target.properties).flat().filter(c =>
+      ? Object.values(target.properties).flat(2).filter(c =>
           (c.type === 'property' || c.type === 'wildProperty') && canBeStolen(c.id, target)
         )
       : [];
@@ -392,7 +393,7 @@ export default function ActionModal({ card, gameState, myId, onConfirm, onCancel
   if (playAs === 'action' && card.subtype === 'dealBreaker') {
     const target = others.find(p => p.id === targetPlayerId);
     const completeSets = target
-      ? Object.keys(SET_SIZES).filter(color => isCompleteSet(color, target) && (target.properties[color] || []).length > 0)
+      ? Object.keys(SET_SIZES).filter(color => isCompleteSet(color, target))
       : [];
 
     return (
@@ -418,7 +419,7 @@ export default function ActionModal({ card, gameState, myId, onConfirm, onCancel
                       className={`px-4 py-2 rounded-lg font-bold ${meta.bg} ${meta.text} hover:opacity-80 ${targetSetColor === color ? 'ring-2 ring-yellow-400' : ''}`}
                       onClick={() => setTargetSetColor(color)}
                     >
-                      {meta.label} ({(target.properties[color] || []).length} cards)
+                      {meta.label} ({(() => { const s = (target.properties[color] || []).find(st => countPropertyCards(st) >= SET_SIZES[color]); return s ? s.length : 0; })()} cards)
                     </button>
                   );
                 })}
@@ -439,8 +440,8 @@ export default function ActionModal({ card, gameState, myId, onConfirm, onCancel
   // --- Rent cards ---
   if (playAs === 'action' && card.type === 'rent') {
     const validColors = card.subtype === 'rentAny'
-      ? Object.keys(SET_SIZES).filter(color => (myPlayer.properties[color] || []).some(c => c.type === 'property' || c.type === 'wildProperty'))
-      : card.colors.filter(color => (myPlayer.properties[color] || []).some(c => c.type === 'property' || c.type === 'wildProperty'));
+      ? Object.keys(SET_SIZES).filter(color => (myPlayer.properties[color] || []).flat().some(c => c.type === 'property' || c.type === 'wildProperty'))
+      : card.colors.filter(color => (myPlayer.properties[color] || []).flat().some(c => c.type === 'property' || c.type === 'wildProperty'));
 
     if (!rentColor) {
       return (
@@ -452,8 +453,7 @@ export default function ActionModal({ card, gameState, myId, onConfirm, onCancel
             <div className="flex flex-wrap gap-2 justify-center my-3">
               {validColors.map(color => {
                 const meta = COLOR_META[color];
-                const arr = myPlayer.properties[color] || [];
-                const rent = arr.length > 0 ? getRentForColor(color, myPlayer) : 0;
+                const rent = getRentForColor(color, myPlayer);
                 return (
                   <button
                     key={color}
@@ -589,7 +589,12 @@ function PlayerList({ players, selected, onSelect, showProps }) {
           </div>
           {showProps && (
             <div className="text-xs text-gray-400 mt-1 pl-9">
-              {Object.entries(p.properties).filter(([, arr]) => arr.length > 0).map(([c, arr]) => `${COLOR_META[c]?.label}(${arr.length})`).join(', ') || 'No properties'}
+              {Object.entries(p.properties)
+                .filter(([, stacks]) => stacks.some(s => s.length > 0))
+                .map(([c, stacks]) => {
+                  const n = stacks.flat().filter(card => card.type === 'property' || card.type === 'wildProperty').length;
+                  return `${COLOR_META[c]?.label}(${n})`;
+                }).join(', ') || 'No properties'}
             </div>
           )}
         </button>
@@ -606,12 +611,16 @@ function cardLabel(card) {
 }
 
 function getRentForColor(color, player) {
-  const arr = player.properties[color] || [];
-  const propCount = arr.filter(c => c.type === 'property' || c.type === 'wildProperty').length;
-  if (propCount === 0) return 0;
+  const stacks = player.properties[color] || [];
   const table = RENT_VALUES[color] || [];
-  const base = table[Math.min(propCount, table.length) - 1] || 0;
-  const hasHouse = arr.some(c => c.subtype === 'house');
-  const hasHotel = arr.some(c => c.subtype === 'hotel');
-  return base + (hasHouse ? 3 : 0) + (hasHotel ? 4 : 0);
+  let maxRent = 0;
+  for (const stack of stacks) {
+    const propCount = stack.filter(c => c.type === 'property' || c.type === 'wildProperty').length;
+    if (propCount === 0) continue;
+    const base = table[Math.min(propCount, table.length) - 1] || 0;
+    const hasHouse = stack.some(c => c.subtype === 'house');
+    const hasHotel = stack.some(c => c.subtype === 'hotel');
+    maxRent = Math.max(maxRent, base + (hasHouse ? 3 : 0) + (hasHotel ? 4 : 0));
+  }
+  return maxRent;
 }

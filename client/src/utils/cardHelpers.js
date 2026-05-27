@@ -74,7 +74,7 @@ export function cardDescription(card) {
     }
     case 'wildProperty':
       if (card.isRainbowWild) return 'Place in ANY color set • No debt value';
-      return `Wild: ${card.colors.map(c => getColorMeta(c).label).join(' or ')} • Bank: $${card.value}M`;
+      return `Wild: ${card.colors.map(c => getColorMeta(c).label).join(' or ')} • Value: $${card.value}M`;
     case 'action': return ACTION_DESCRIPTIONS[card.subtype] || '';
     case 'rent':
       if (card.subtype === 'rentAny') return 'Charge ALL players rent for any one color';
@@ -123,7 +123,7 @@ export function canBePlayedAsProperty(card) {
 }
 
 export function canBeBanked(card) {
-  return card && card.type !== 'property';
+  return card && card.type !== 'property' && card.type !== 'wildProperty';
 }
 
 export function countPropertyCards(arr) {
@@ -133,11 +133,20 @@ export function countPropertyCards(arr) {
 export function isCompleteSet(color, player) {
   const size = SET_SIZES[color];
   if (!size) return false;
-  return countPropertyCards(player.properties[color] || []) >= size;
+  const stacks = player.properties[color] || [];
+  return stacks.some(stack => countPropertyCards(stack) >= size);
 }
 
 export function getCompleteSets(player) {
-  return Object.keys(SET_SIZES).filter(color => isCompleteSet(color, player));
+  const result = [];
+  for (const [color, stacks] of Object.entries(player.properties || {})) {
+    const size = SET_SIZES[color];
+    if (!size) continue;
+    for (const stack of stacks) {
+      if (countPropertyCards(stack) >= size) result.push(color);
+    }
+  }
+  return result;
 }
 
 export function getBankTotal(player) {
@@ -159,9 +168,11 @@ export function getRentForSet(color, cards) {
 }
 
 export function canBeStolen(cardId, ownerPlayer) {
-  for (const [color, arr] of Object.entries(ownerPlayer.properties || {})) {
-    if (!arr.find(c => c.id === cardId)) continue;
-    return !isCompleteSet(color, ownerPlayer);
+  for (const [color, stacks] of Object.entries(ownerPlayer.properties || {})) {
+    for (const stack of stacks) {
+      if (!stack.find(c => c.id === cardId)) continue;
+      return countPropertyCards(stack) < (SET_SIZES[color] || Infinity);
+    }
   }
   return false;
 }
@@ -169,10 +180,12 @@ export function canBeStolen(cardId, ownerPlayer) {
 export function getPayableCards(player) {
   const out = [];
   for (const c of player.bank || []) out.push({ ...c, fromArea: 'bank' });
-  for (const [color, arr] of Object.entries(player.properties || {})) {
-    for (const c of arr) {
-      if (c.isRainbowWild) continue;
-      out.push({ ...c, fromArea: 'property', fromColor: color });
+  for (const [color, stacks] of Object.entries(player.properties || {})) {
+    for (const stack of stacks) {
+      for (const c of stack) {
+        if (c.isRainbowWild) continue;
+        out.push({ ...c, fromArea: 'property', fromColor: color });
+      }
     }
   }
   return out;

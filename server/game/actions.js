@@ -21,20 +21,44 @@ function removeFromBank(player, cardId) {
   return player.bank.splice(idx, 1)[0];
 }
 
-// Remove a card from player's properties (any color)
+// Remove a card from player's properties (any color, any stack).
+// Prunes empty stacks after removal.
 function removeFromProperties(player, cardId) {
-  for (const [color, arr] of Object.entries(player.properties)) {
-    const idx = arr.findIndex(c => c.id === cardId);
-    if (idx !== -1) return arr.splice(idx, 1)[0];
+  for (const [, stacks] of Object.entries(player.properties)) {
+    for (let si = 0; si < stacks.length; si++) {
+      const stack = stacks[si];
+      const idx = stack.findIndex(c => c.id === cardId);
+      if (idx !== -1) {
+        const [removed] = stack.splice(idx, 1);
+        if (stack.length === 0) stacks.splice(si, 1); // prune empty stack
+        return removed;
+      }
+    }
   }
   return null;
 }
 
-// Place a property card into a player's color group
+// Place a property card into the player's color group.
+// Rule: a single stack may hold at most SET_SIZES[color] property cards.
+// If all existing stacks are full (or none exist), a new stack is created.
 function placeInProperties(player, card, color) {
   if (!player.properties[color]) player.properties[color] = [];
-  player.properties[color].push(card);
-  card.color = color; // track current placement
+  const stacks = player.properties[color];
+  const setSize = SET_SIZES[color] || Infinity;
+  const target = stacks.find(
+    stack => countPropertyCards(stack) < setSize,
+  );
+  if (target) {
+    target.push(card);
+  } else {
+    stacks.push([card]);
+  }
+  card.color = color;
+}
+
+// All property cards across all stacks (flat), for lookups
+function allPropertyCards(player) {
+  return Object.values(player.properties).flat(2);
 }
 
 // Main card play handler — returns { error } or { ok, pendingAction }
@@ -50,12 +74,12 @@ function playCard(room, playerId, payload) {
   if (room.playsRemainingThisTurn <= 0) return { error: 'No plays remaining this turn' };
   if (room.pendingAction) return { error: 'Waiting for action resolution' };
 
-  // BANK: money or action/rent cards used as money
+  // BANK: money or action/rent cards used as money.
+  // Properties (including wild properties) can NEVER be banked.
   if (playAs === 'bank') {
-    if (card.type !== 'money' && card.type !== 'action' && card.type !== 'rent' && card.type !== 'wildProperty') {
+    if (card.type !== 'money' && card.type !== 'action' && card.type !== 'rent') {
       return { error: 'Cannot bank that card type' };
     }
-    if (card.type === 'property') return { error: 'Properties cannot be banked' };
     removeFromHand(player, cardId);
     player.bank.push(card);
     room.playsRemainingThisTurn--;
@@ -71,7 +95,6 @@ function playCard(room, playerId, payload) {
     if (card.type === 'property') {
       color = card.color; // regular property has fixed color
     } else {
-      // Wild: validate destinationColor
       if (!color) return { error: 'Must specify destinationColor for wild cards' };
       if (!card.isRainbowWild && !card.colors.includes(color)) {
         return { error: 'Invalid color for this wild card' };
@@ -116,25 +139,27 @@ function handleAction(room, player, card, opts) {
 
     case 'house': {
       if (!targetSet) return { error: 'Must specify targetSet color' };
-      if (!isCompleteSet(targetSet, player)) return { error: 'Set is not complete' };
       if (targetSet === 'railroad' || targetSet === 'utility') return { error: 'Cannot place house on Railroad or Utility' };
-      const arr = player.properties[targetSet];
-      if (hasHouse(arr)) return { error: 'Set already has a house' };
+      const stacks = player.properties[targetSet] || [];
+      const completeStack = stacks.find(stack => countPropertyCards(stack) >= SET_SIZES[targetSet]);
+      if (!completeStack) return { error: 'Set is not complete' };
+      if (hasHouse(completeStack)) return { error: 'Set already has a house' };
       removeFromHand(player, card.id);
-      player.properties[targetSet].push(card);
+      completeStack.push(card);
       room.playsRemainingThisTurn--;
       return { ok: true };
     }
 
     case 'hotel': {
       if (!targetSet) return { error: 'Must specify targetSet color' };
-      if (!isCompleteSet(targetSet, player)) return { error: 'Set is not complete' };
       if (targetSet === 'railroad' || targetSet === 'utility') return { error: 'Cannot place hotel on Railroad or Utility' };
-      const arr = player.properties[targetSet];
-      if (!hasHouse(arr)) return { error: 'Set must have a house before placing hotel' };
-      if (hasHotel(arr)) return { error: 'Set already has a hotel' };
+      const stacks = player.properties[targetSet] || [];
+      const completeStack = stacks.find(stack => countPropertyCards(stack) >= SET_SIZES[targetSet]);
+      if (!completeStack) return { error: 'Set is not complete' };
+      if (!hasHouse(completeStack)) return { error: 'Set must have a house before placing hotel' };
+      if (hasHotel(completeStack)) return { error: 'Set already has a hotel' };
       removeFromHand(player, card.id);
-      player.properties[targetSet].push(card);
+      completeStack.push(card);
       room.playsRemainingThisTurn--;
       return { ok: true };
     }
@@ -184,9 +209,7 @@ function handleAction(room, player, card, opts) {
       const targetPlayer = room.players.find(p => p.id === target);
       if (!targetPlayer || targetPlayer.id === player.id) return { error: 'Invalid target' };
       if (!targetProperty) return { error: 'Must specify targetProperty' };
-      const tCard = targetPlayer.properties
-        ? Object.values(targetPlayer.properties).flat().find(c => c.id === targetProperty)
-        : null;
+      const tCard = allPropertyCards(targetPlayer).find(c => c.id === targetProperty);
       if (!tCard) return { error: 'Target property not found' };
       if (!canBeStolen(tCard, targetPlayer)) return { error: 'Cannot steal from a complete set' };
       removeFromHand(player, card.id);
@@ -210,10 +233,10 @@ function handleAction(room, player, card, opts) {
       const targetPlayer = room.players.find(p => p.id === target);
       if (!targetPlayer || targetPlayer.id === player.id) return { error: 'Invalid target' };
       if (!targetProperty || !offeredProperty) return { error: 'Must specify targetProperty and offeredProperty' };
-      const tCard = Object.values(targetPlayer.properties).flat().find(c => c.id === targetProperty);
+      const tCard = allPropertyCards(targetPlayer).find(c => c.id === targetProperty);
       if (!tCard) return { error: 'Target property not found' };
       if (!canBeStolen(tCard, targetPlayer)) return { error: 'Cannot swap from a complete set' };
-      const oCard = Object.values(player.properties).flat().find(c => c.id === offeredProperty);
+      const oCard = allPropertyCards(player).find(c => c.id === offeredProperty);
       if (!oCard) return { error: 'Offered property not found' };
       if (!canBeStolen(oCard, player)) return { error: 'Cannot swap from your own complete set' };
       removeFromHand(player, card.id);
@@ -269,11 +292,9 @@ function handleRent(room, player, card, opts) {
       return { error: 'Must choose a valid rent color' };
     }
 
-    // Capture flag BEFORE clearing it, then clear
     const presetDouble = room.doubleRentActive;
     room.doubleRentActive = false;
 
-    // Player can also club a Double the Rent card from hand alongside this rent
     let playedDoubleCard = false;
     if (useDoubleRent && !presetDouble) {
       const drc = player.hand.find(c => c.type === 'action' && c.subtype === 'doubleRent');
@@ -296,7 +317,6 @@ function handleRent(room, player, card, opts) {
 
     removeFromHand(player, card.id);
     room.discardPile.push(card);
-    // Rent costs 1 play; if we also consumed a doubleRent card from hand, that's +1 more
     room.playsRemainingThisTurn -= playedDoubleCard ? 2 : 1;
 
     const [first, ...rest] = others;
@@ -314,7 +334,7 @@ function handleRent(room, player, card, opts) {
     return { ok: true, pendingAction: room.pendingAction };
   }
 
-  // Multicolor wild rent (rainbow) — charges ONE chosen player; cannot be doubled
+  // Rainbow wild rent — charges ONE chosen player; cannot be doubled
   if (card.subtype === 'rentAny') {
     if (!destinationColor) return { error: 'Must specify a rent color' };
     if (!target) return { error: 'Must specify a target player' };
@@ -360,7 +380,6 @@ function handleJustSayNo(room, playerId) {
   room.discardPile.push(jsnCard);
 
   pa.jsnDepth++;
-  // Switch responder: if fromPlayer played JSN, switch to originalTarget; vice versa
   if (playerId === pa.fromPlayerId) {
     pa.currentResponderId = pa.originalTargetId;
   } else {
@@ -370,29 +389,25 @@ function handleJustSayNo(room, playerId) {
   return { ok: true };
 }
 
-// Accept the current state of the pending action (or let JSN stand)
-// jsnDepth even → action proceeds; odd → action cancelled
+// Accept the current state of the pending action (or let JSN stand).
+// jsnDepth even → action proceeds; odd → action cancelled.
 function handleAccept(room, playerId) {
   const pa = room.pendingAction;
   if (!pa) return { error: 'No pending action' };
   if (pa.currentResponderId !== playerId) return { error: 'Not your turn to respond' };
 
-  const actionCancelled = pa.jsnDepth % 2 === 1; // odd = JSN standing
+  const actionCancelled = pa.jsnDepth % 2 === 1;
 
   if (actionCancelled) {
-    // Action was cancelled by Just Say No; advance to next birthday target or clear
     return advanceOrClearPendingAction(room, true);
   }
 
-  // Action proceeds
   if (pa.phase === 'jsnWindow') {
-    // For payment actions, move to payment phase
     if (pa.type === 'rent' || pa.type === 'debtCollector' || pa.type === 'birthday') {
       pa.phase = 'payment';
       pa.currentResponderId = pa.originalTargetId;
       return { ok: true, needsPayment: true };
     }
-    // For theft actions, resolve immediately
     return resolveTheftAction(room, pa);
   }
 
@@ -412,36 +427,34 @@ function handlePayDebt(room, playerId, cardIds) {
   const payableCards = getPayableCards(targetPlayer);
   const totalAvailable = payableCards.reduce((s, c) => s + (c.value || 0), 0);
 
-  // Collect selected cards
   const selected = cardIds.map(id => payableCards.find(c => c.id === id)).filter(Boolean);
   const totalPaid = selected.reduce((s, c) => s + (c.value || 0), 0);
 
-  // Validate: must pay at least the debt if able
   if (totalPaid < pa.amount && totalAvailable >= pa.amount) {
     return { error: `Must pay at least ${pa.amount}M (you can cover it)` };
   }
 
-  // Rainbow wilds cannot pay
   if (selected.some(c => c.isRainbowWild)) {
     return { error: 'Rainbow wilds cannot be used to pay debts' };
   }
 
-  // Transfer cards
   for (const c of selected) {
     if (c.from === 'bank') {
       removeFromBank(targetPlayer, c.id);
       fromPlayer.bank.push(c);
     } else if (c.from === 'property') {
       removeFromProperties(targetPlayer, c.id);
-      // Property goes into recipient's matching color group (or first valid color for wilds)
       let destColor = c.color;
       if (!destColor && c.type === 'wildProperty') {
-        destColor = c.colors[0] === 'rainbow' ? Object.keys(fromPlayer.properties)[0] : c.colors[0];
+        destColor = c.colors[0] === 'rainbow'
+          ? Object.keys(fromPlayer.properties)[0]
+          : c.colors[0];
       }
-      if (destColor && fromPlayer.properties[destColor]) {
-        fromPlayer.properties[destColor].push(c);
+      if (destColor) {
+        if (!fromPlayer.properties[destColor]) fromPlayer.properties[destColor] = [];
+        placeInProperties(fromPlayer, c, destColor);
       } else {
-        fromPlayer.bank.push(c); // fallback
+        fromPlayer.bank.push(c);
       }
     }
   }
@@ -456,32 +469,39 @@ function resolveTheftAction(room, pa) {
   const targetPlayer = room.players.find(p => p.id === pa.originalTargetId);
 
   if (pa.type === 'slyDeal') {
-    const c = Object.values(targetPlayer.properties).flat().find(x => x.id === pa.details.targetCardId);
+    const c = allPropertyCards(targetPlayer).find(x => x.id === pa.details.targetCardId);
     if (!c) return advanceOrClearPendingAction(room, true);
     removeFromProperties(targetPlayer, c.id);
     const destColor = c.color || (c.isRainbowWild ? 'brown' : c.colors[0]);
-    if (fromPlayer.properties[destColor]) fromPlayer.properties[destColor].push(c);
-    else fromPlayer.bank.push(c);
+    if (!fromPlayer.properties[destColor]) fromPlayer.properties[destColor] = [];
+    placeInProperties(fromPlayer, c, destColor);
+
   } else if (pa.type === 'forcedDeal') {
-    // Swap cards
-    const tCard = Object.values(targetPlayer.properties).flat().find(x => x.id === pa.details.targetCardId);
-    const oCard = Object.values(fromPlayer.properties).flat().find(x => x.id === pa.details.offeredCardId);
+    const tCard = allPropertyCards(targetPlayer).find(x => x.id === pa.details.targetCardId);
+    const oCard = allPropertyCards(fromPlayer).find(x => x.id === pa.details.offeredCardId);
     if (tCard && oCard) {
-      const tColor = getPropertyColor(targetPlayer, tCard.id);
-      const oColor = getPropertyColor(fromPlayer, oCard.id);
+      const tColor = findPropertyColor(targetPlayer, tCard.id);
+      const oColor = findPropertyColor(fromPlayer, oCard.id);
       removeFromProperties(targetPlayer, tCard.id);
       removeFromProperties(fromPlayer, oCard.id);
-      if (fromPlayer.properties[tColor]) fromPlayer.properties[tColor].push(tCard);
+      if (tColor) placeInProperties(fromPlayer, tCard, tColor);
       else fromPlayer.bank.push(tCard);
-      if (targetPlayer.properties[oColor]) targetPlayer.properties[oColor].push(oCard);
+      if (oColor) placeInProperties(targetPlayer, oCard, oColor);
       else targetPlayer.bank.push(oCard);
     }
+
   } else if (pa.type === 'dealBreaker') {
     const color = pa.details.targetSetColor;
-    const setCards = [...(targetPlayer.properties[color] || [])];
-    targetPlayer.properties[color] = [];
-    if (!fromPlayer.properties[color]) fromPlayer.properties[color] = [];
-    fromPlayer.properties[color].push(...setCards);
+    const stacks = targetPlayer.properties[color] || [];
+    // Steal only the one complete stack — leave any overflow stacks with the target
+    const completeIdx = stacks.findIndex(
+      stack => countPropertyCards(stack) >= SET_SIZES[color],
+    );
+    if (completeIdx !== -1) {
+      const [stolenStack] = stacks.splice(completeIdx, 1);
+      if (!fromPlayer.properties[color]) fromPlayer.properties[color] = [];
+      fromPlayer.properties[color].push(stolenStack);
+    }
   }
 
   checkAndSetWinner(room);
@@ -511,28 +531,32 @@ function reassignWild(room, playerId, cardId, newColor) {
   const player = room.players.find(p => p.id === playerId);
   if (!player) return { error: 'Player not found' };
 
-  const card = Object.values(player.properties).flat().find(c => c.id === cardId);
-  if (!card || (card.type !== 'wildProperty')) return { error: 'Card not found or not a wild' };
+  // Find the wild across all stacks
+  let oldColor = null;
+  let oldStack = null;
+  for (const [color, stacks] of Object.entries(player.properties)) {
+    for (const stack of stacks) {
+      if (stack.find(c => c.id === cardId)) { oldColor = color; oldStack = stack; break; }
+    }
+    if (oldColor) break;
+  }
+
+  const card = oldStack?.find(c => c.id === cardId);
+  if (!card || card.type !== 'wildProperty') return { error: 'Card not found or not a wild' };
 
   if (!card.isRainbowWild && !card.colors.includes(newColor)) {
     return { error: 'Invalid color for this wild' };
   }
   if (!player.properties[newColor]) return { error: 'Invalid color' };
 
-  const oldColor = getPropertyColor(player, cardId);
-  if (isCompleteSet(oldColor, player)) return { error: 'Cannot move wild from a complete set mid-action' };
+  // Cannot move wild out of a complete set
+  if (countPropertyCards(oldStack) >= SET_SIZES[oldColor]) {
+    return { error: 'Cannot move wild from a complete set mid-action' };
+  }
 
   removeFromProperties(player, cardId);
-  player.properties[newColor].push(card);
-  card.color = newColor;
+  placeInProperties(player, card, newColor);
   return { ok: true };
-}
-
-function getPropertyColor(player, cardId) {
-  for (const [color, arr] of Object.entries(player.properties)) {
-    if (arr.find(c => c.id === cardId)) return color;
-  }
-  return null;
 }
 
 module.exports = {

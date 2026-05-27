@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import PropertySet from './PropertySet';
 import Card from './Card';
-import { isCompleteSet, SET_SIZES, getCompleteSets } from '../utils/cardHelpers';
+import { countPropertyCards, isCompleteSet, SET_SIZES, getCompleteSets } from '../utils/cardHelpers';
 
 export default function PlayerArea({
   player, isMe, isCurrent, isWinner,
@@ -9,7 +9,7 @@ export default function PlayerArea({
 }) {
   const [bankExpanded, setBankExpanded] = useState(false);
   const bankTotal = (player.bank || []).reduce((s, c) => s + (c.value || 0), 0);
-  const filledColors = Object.entries(player.properties || {}).filter(([, arr]) => arr.length > 0);
+  const filledColors = Object.entries(player.properties || {}).filter(([, stacks]) => stacks.some(s => s.length > 0));
   const completeSets = getCompleteSets(player).length;
 
   const borderStyle = isWinner
@@ -78,18 +78,20 @@ export default function PlayerArea({
       {/* Properties */}
       {filledColors.length > 0 ? (
         <div className="space-y-1.5">
-          {filledColors.map(([color, cards]) => (
-            <PropertySet
-              key={color}
-              color={color}
-              cards={cards}
-              isComplete={isCompleteSet(color, player)}
-              small
-              selectedCardId={selectedCardId}
-              onCardClick={onPropertyClick ? (c) => onPropertyClick(c, color, player) : undefined}
-              onWildClick={isMe && onWildClick ? onWildClick : undefined}
-            />
-          ))}
+          {filledColors.flatMap(([color, stacks]) =>
+            stacks.map((cards, stackIdx) => (
+              <PropertySet
+                key={`${color}-${stackIdx}`}
+                color={color}
+                cards={cards}
+                isComplete={countPropertyCards(cards) >= (SET_SIZES[color] || Infinity)}
+                small
+                selectedCardId={selectedCardId}
+                onCardClick={onPropertyClick ? (c) => onPropertyClick(c, color, player) : undefined}
+                onWildClick={isMe && onWildClick ? onWildClick : undefined}
+              />
+            ))
+          )}
         </div>
       ) : (
         <div className="text-xs text-gray-600 italic pl-1">No properties yet</div>
