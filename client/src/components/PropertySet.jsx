@@ -105,7 +105,7 @@ export default function PropertySet({
       <div className="flex flex-wrap gap-1">
         {cards.map(c => {
           const isWild = c.type === 'wildProperty';
-          const canMove = isWild && !!onWildClick && !isComplete;
+          const canMove = isWild && !!onWildClick && !hasHouse && !hasHotel;
           return (
             <div key={c.id} className="relative">
               <Card
